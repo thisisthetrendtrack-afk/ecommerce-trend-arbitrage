@@ -1,0 +1,13 @@
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.git
+.gitignore
+temp_media/
+*.db
+bot_daemon.log
+*.zip
+.env
+.pytest_cache/
+tests/

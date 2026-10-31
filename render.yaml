@@ -1,0 +1,32 @@
+# ==============================================================================
+# Render Blueprint Specification (render.yaml)
+# https://render.com/docs/blueprint-spec
+# ==============================================================================
+# Deploys as a Free Web Service with an automatic background HTTP health check
+# endpoint on $PORT (10000) so Render keeps the bot running 24/7.
+# ==============================================================================
+
+services:
+  - type: web
+    name: ecommerce-trend-arbitrage-bot
+    env: docker
+    plan: free
+    region: oregon
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /
+    autoDeploy: true
+    envVars:
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
+      - key: TELEGRAM_ENABLED
+        value: "true"
+      - key: HEADLESS
+        value: "true"
+      - key: PORT
+        value: "10000"
+      - key: BROWSER_TIMEOUT_MS
+        value: "35000"
+      - key: MIN_DAYS_ACTIVE
+        value: "5"
