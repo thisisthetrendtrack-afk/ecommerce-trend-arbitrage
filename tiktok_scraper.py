@@ -47,6 +47,10 @@ class TikTokTopAdsScraper:
         logger.info(f"[TikTok Scraper] Querying top video ads for region={country_code}, keyword='{keyword}'...")
 
         captured_ads: List[Dict[str, Any]] = []
+        pending_parsers: List[asyncio.Task] = []
+
+        context = None
+        page = None
 
         try:
             context = await browser_manager.create_stealth_context()
@@ -56,21 +60,34 @@ class TikTokTopAdsScraper:
             return []
 
         # Response listener for TikTok Creative Center internal API
-        async def on_response(response):
+        async def handle_response(response):
             try:
-                if self.api_pattern in response.url or "top_ads" in response.url:
+                url = response.url
+                if self.api_pattern in url or "top_ads" in url or "inspiration/popular" in url:
                     content_type = response.headers.get("content-type", "")
                     if "application/json" in content_type:
-                        data = await response.json()
+                        try:
+                            data = await response.json()
+                        except Exception:
+                            body = await response.text()
+                            data = json.loads(body)
+
+                        res_data = data.get("data", {}) if isinstance(data, dict) else {}
                         materials = (
-                            data.get("data", {}).get("materials", [])
-                            or data.get("data", {}).get("list", [])
-                            or data.get("materials", [])
+                            res_data.get("materials")
+                            or res_data.get("list")
+                            or res_data.get("creatives")
+                            or data.get("materials")
+                            or []
                         )
-                        if materials:
+                        if isinstance(materials, list) and materials:
                             captured_ads.extend(materials)
-            except Exception:
-                pass
+            except Exception as parse_err:
+                logger.debug(f"[TikTok] Network response parse skipped: {parse_err}")
+
+        def on_response(response):
+            task = asyncio.create_task(handle_response(response))
+            pending_parsers.append(task)
 
         page.on("response", on_response)
 
@@ -84,7 +101,7 @@ class TikTokTopAdsScraper:
             target_url += f"&keyword={encoded_kw}"
 
         try:
-            # Short timeout to quickly detect if TikTok is unreachable on local ISP
+            # Short timeout to detect if TikTok is blocked or unreachable on current network
             await page.goto(target_url, wait_until="domcontentloaded", timeout=12000)
             await asyncio.sleep(2.0)
 
@@ -93,13 +110,48 @@ class TikTokTopAdsScraper:
                 await page.mouse.wheel(0, 1500)
                 await asyncio.sleep(1.2)
 
+            if pending_parsers:
+                await asyncio.gather(*pending_parsers, return_exceptions=True)
+
         except Exception as nav_err:
             logger.warning(f"[TikTok] Direct navigation failed (possibly regional block): {nav_err}")
         finally:
+            # DOM fallback in case network API payloads were missed or served inline
+            dom_items: List[Dict[str, Any]] = []
+            if not captured_ads and page and not page.is_closed():
+                try:
+                    dom_items = await page.evaluate(r"""
+                        () => {
+                            const results = [];
+                            const cards = document.querySelectorAll('div[class*="Card"], div[class*="itemWrapper"]');
+                            cards.forEach((card, idx) => {
+                                const video = card.querySelector('video');
+                                const titleEl = card.querySelector('[class*="title"], [class*="desc"], h4, p');
+                                const linkEl = card.querySelector('a');
+                                const img = card.querySelector('img');
+                                if (video && video.src) {
+                                    results.push({
+                                        id: 'dom_' + idx,
+                                        video_url: video.src,
+                                        title: titleEl ? titleEl.innerText.trim() : '',
+                                        cover_url: img ? img.src : '',
+                                        landing_page_url: linkEl ? linkEl.href : ''
+                                    });
+                                }
+                            });
+                            return results;
+                        }
+                    """)
+                    if dom_items:
+                        captured_ads.extend(dom_items)
+                except Exception:
+                    pass
+
             try:
                 page.remove_listener("response", on_response)
                 await page.close()
-                await context.close()
+                if context:
+                    await context.close()
             except Exception:
                 pass
 
@@ -108,22 +160,28 @@ class TikTokTopAdsScraper:
         seen_ids = set()
 
         for item in captured_ads:
-            item_id = str(item.get("id") or item.get("item_id") or item.get("material_id"))
+            item_id = str(item.get("id") or item.get("item_id") or item.get("material_id") or "")
             if not item_id or item_id in seen_ids:
                 continue
 
-            # Extract video URL
-            video_info = item.get("video_info", {}) or {}
+            # Extract video URL with fallback resolution
+            video_info = item.get("video_info") or {}
             video_url = (
                 item.get("video_url")
                 or item.get("video_play_url")
+                or item.get("play_url")
                 or video_info.get("video_url")
                 or video_info.get("video_url_720p")
                 or video_info.get("video_url_540p")
+                or video_info.get("main_url")
             )
 
+            # If transcoded URLs list is present
+            if not video_url and isinstance(video_info.get("transcoded_urls"), list) and video_info["transcoded_urls"]:
+                video_url = video_info["transcoded_urls"][0]
+
             # Extract title / brand / product
-            title = (
+            raw_title = (
                 item.get("ad_title")
                 or item.get("title")
                 or item.get("brand_name")
@@ -131,17 +189,26 @@ class TikTokTopAdsScraper:
                 or keyword
                 or "Viral TikTok Product"
             )
-            title = sanitize_text(title).title()
+            title = sanitize_text(raw_title).title()
 
             cover_url = item.get("cover_url") or video_info.get("cover_url")
             landing_page = item.get("landing_page_url") or item.get("target_url")
-            likes = item.get("like_cnt") or item.get("like_count") or 1200
+            
+            # Parse likes count safely
+            raw_likes = item.get("like_cnt") or item.get("like_count") or 1200
+            try:
+                likes = int(raw_likes)
+            except (ValueError, TypeError):
+                likes = 1200
+
+            # Derive core keyword tokens
+            extracted_keywords = extract_core_keywords(title) if title else ["tiktok"]
 
             ad_obj = ScrapedAd(
                 ad_id=f"tiktok_{item_id}",
                 source_country=country_code,
                 started_date=datetime.now(timezone.utc),
-                days_active=max(5, int(item.get("duration", 15))),
+                days_active=max(5, int(item.get("duration") or 15)),
                 ad_title=title,
                 ad_body=f"🎵 Viral TikTok E-Commerce Winner | ❤️ {likes:,} Likes",
                 landing_page_url=landing_page,
@@ -149,7 +216,7 @@ class TikTokTopAdsScraper:
                 video_url=video_url,
                 ad_library_url=f"https://ads.tiktok.com/business/creativecenter/top-ads/{item_id}",
                 clean_product_name=title,
-                core_keywords=[title.split()[0]] if title else ["tiktok"],
+                core_keywords=extracted_keywords or ["tiktok"],
                 creative_variations_count=3,
                 is_confirmed_scaling=True,
             )
