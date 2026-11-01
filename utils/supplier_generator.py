@@ -78,38 +78,54 @@ NON_ALPHANUM_REGEX = re.compile(r"[#@&*^%$!~`+=_<>|/\\{}\[\]\"\'\(\)\:\;\-\–\�
 # 🚫 List of medical, supplement, borderline inappropriate, or digital spam exclusions
 EXCLUDED_KEYWORDS = [
     # Medical & Body Issues
-    "cinnamon", "oil", "supplement", "capsules", "weight loss", "fat", "veins", "stretch marks",
-    "pain", "belly", "serum", "pill", "diet", "doctor", "skin", "medical", "treatment", "cure",
-    "infections", "swelling", "detox", "liver", "bloating", "digestion", "diabetic", "blood pressure",
-    "hair loss", "fungus", "scars", "acne", "pregnancy", "cream", "gels", "relief", "orthopedic",
+    "cinnamon", "oil", "supplement", "supplements", "capsules", "capsule", "weight loss", "fat", "veins", "vein",
+    "stretch marks", "pain", "belly", "belly fat", "serum", "pill", "pills", "diet", "doctor", "skin", "medical",
+    "treatment", "cure", "infections", "swelling", "detox", "liver", "bloating", "digestion", "diabetic",
+    "blood pressure", "hair loss", "fungus", "scars", "acne", "pregnancy", "cream", "gels", "relief", "orthopedic",
+    "varicose", "prostate", "cholesterol", "tinnitus", "hearing loss", "joint pain", "gut health",
     
     # Ingestibles / Health
-    "mg", "7200mg", "nutrition", "dietary", "vitamins", "capsule", "powder", "organic", "extract",
+    "mg", "7200mg", "nutrition", "dietary", "vitamins", "vitamin", "powder", "organic", "extract", "mct oil",
+    "gummy", "gummies", "collagen", "probiotic", "probiotics", "keto",
     
     # Digital Media, Books, Novels & Entertainment (Non-Physical)
     "novel", "novels", "romance", "fiction", "book", "books", "ebook", "ebooks",
     "kindle", "paperback", "hardcover", "audiobook", "audiobooks", "author", "authors",
-    "chapter", "chapters", "read now", "read free", "read more", "story", "stories",
+    "chapter", "chapters", "read now", "read free", "read more", "read online", "story", "stories",
     "hymn", "wattpad", "webnovel", "goodnovel", "dreame", "manga", "comic", "comics",
-    "movie", "trailer", "gameplay", "mobile game", "rpg", "stream now", "episodes",
+    "movie", "trailer", "gameplay", "mobile game", "rpg", "stream now", "episodes", "episode",
+    "orphan", "victorian", "series", "bestseller", "publish", "publishing",
     "charity", "donation", "donate", "church", "pastor", "prophecy", "prayer",
     "t-shirt", "mug", "hoodie",
 
     # Non-Dropshippable / Scams
-    "casino", "gambling", "crypto", "free money", "earning app", "courses", "adult", "dating"
+    "casino", "gambling", "crypto", "free money", "earning app", "courses", "course", "adult", "dating", "webinar"
 ]
 
 
-def is_valid_dropship_product(ad_title: str, ad_body: str = "") -> bool:
+def is_valid_dropship_product(
+    ad_title: str = "",
+    ad_body: str = "",
+    body: str = "",
+    clean_name: str = "",
+    landing_url: str = "",
+    **kwargs: Any,
+) -> bool:
     """
     Validates that parsed ad text doesn't contain forbidden niches, medical, 
-    or adult content, avoiding bad image clickbait.
+    digital fiction, adult content, or scam/clickbait.
     """
-    text_to_check = f"{ad_title} {ad_body}".lower()
+    content_body = ad_body or body or ""
+    text_to_check = f"{ad_title} {content_body} {clean_name} {landing_url}".lower()
     
     for kw in EXCLUDED_KEYWORDS:
-        if kw in text_to_check:
-            return False
+        if len(kw) <= 4:
+            pattern = r'\b' + re.escape(kw) + r'\b'
+            if re.search(pattern, text_to_check):
+                return False
+        else:
+            if kw in text_to_check:
+                return False
             
     return True
 

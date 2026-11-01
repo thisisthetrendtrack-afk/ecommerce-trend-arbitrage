@@ -182,8 +182,9 @@ async def run_viral_scraper(
         f"⚡ *Scraping Meta Ad Library* {label}\n"
         f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
         f"• Country: `{country_code}`\n"
-        f"• Filter: *Active Video Creatives*\n"
-        f"• Proof: *Proven Multi-Day Longevity*\n\n"
+        f"• Longevity: *Breakout Sweet Spot (3–14 Days)*\n"
+        f"• Scaling Proof: *>= 3 Creative Variations*\n"
+        f"• Quality Gate: *Physical Dropship Only (No Nutra/Books)*\n\n"
         f"🔎 Intercepting live video ads...\n"
         f"⏱️ _Please wait ~8-15 seconds for video compilation..._"
     )

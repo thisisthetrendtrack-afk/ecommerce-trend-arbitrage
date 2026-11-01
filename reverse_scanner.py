@@ -178,40 +178,56 @@ COUNTRY_REELS_FOOTPRINTS: Dict[str, List[str]] = {
 # 🚫 List of medical, supplement, borderline inappropriate, or digital spam exclusions
 EXCLUDED_KEYWORDS = [
     # Medical & Body Issues
-    "cinnamon", "oil", "supplement", "capsules", "weight loss", "fat", "veins", "stretch marks",
-    "pain", "belly", "serum", "pill", "diet", "doctor", "skin", "medical", "treatment", "cure",
-    "infections", "swelling", "detox", "liver", "bloating", "digestion", "diabetic", "blood pressure",
-    "hair loss", "fungus", "scars", "acne", "pregnancy", "cream", "gels", "relief", "orthopedic",
+    "cinnamon", "oil", "supplement", "supplements", "capsules", "capsule", "weight loss", "fat", "veins", "vein",
+    "stretch marks", "pain", "belly", "belly fat", "serum", "pill", "pills", "diet", "doctor", "skin", "medical",
+    "treatment", "cure", "infections", "swelling", "detox", "liver", "bloating", "digestion", "diabetic",
+    "blood pressure", "hair loss", "fungus", "scars", "acne", "pregnancy", "cream", "gels", "relief", "orthopedic",
+    "varicose", "prostate", "cholesterol", "tinnitus", "hearing loss", "joint pain", "gut health",
     
     # Ingestibles / Health
-    "mg", "7200mg", "nutrition", "dietary", "vitamins", "capsule", "powder", "organic", "extract",
+    "mg", "7200mg", "nutrition", "dietary", "vitamins", "vitamin", "powder", "organic", "extract", "mct oil",
+    "gummy", "gummies", "collagen", "probiotic", "probiotics", "keto",
     
     # Digital Media, Books, Novels & Entertainment (Non-Physical)
     "novel", "novels", "romance", "fiction", "book", "books", "ebook", "ebooks",
     "kindle", "paperback", "hardcover", "audiobook", "audiobooks", "author", "authors",
-    "chapter", "chapters", "read now", "read free", "read more", "story", "stories",
+    "chapter", "chapters", "read now", "read free", "read more", "read online", "story", "stories",
     "hymn", "wattpad", "webnovel", "goodnovel", "dreame", "manga", "comic", "comics",
-    "movie", "trailer", "gameplay", "mobile game", "rpg", "stream now", "episodes",
+    "movie", "trailer", "gameplay", "mobile game", "rpg", "stream now", "episodes", "episode",
+    "orphan", "victorian", "series", "bestseller", "publish", "publishing",
     "charity", "donation", "donate", "church", "pastor", "prophecy", "prayer",
     "t-shirt", "mug", "hoodie",
 
     # Non-Dropshippable / Scams
-    "casino", "gambling", "crypto", "free money", "earning app", "courses", "adult", "dating"
+    "casino", "gambling", "crypto", "free money", "earning app", "courses", "course", "adult", "dating", "webinar"
 ]
 
 
-def is_valid_dropship_product(ad_title: str, ad_body: str) -> bool:
+def is_valid_dropship_product(
+    ad_title: str = "",
+    ad_body: str = "",
+    body: str = "",
+    clean_name: str = "",
+    landing_url: str = "",
+    **kwargs: Any,
+) -> bool:
     """
     Validates that parsed ad text doesn't contain forbidden niches, medical, 
-    or adult content, avoiding bad image clickbait.
+    digital fiction, adult content, or scam/clickbait.
     """
-    text_to_check = f"{ad_title} {ad_body}".lower()
+    content_body = ad_body or body or ""
+    text_to_check = f"{ad_title} {content_body} {clean_name} {landing_url}".lower()
     
     for kw in EXCLUDED_KEYWORDS:
-        # Check for word boundary or direct inclusion to prevent false-positives
-        if kw in text_to_check:
-            logger.warning(f"🚫 Excluded suspect medical/health/spam ad: '{ad_title[:45]}...' due to keyword: '{kw}'")
-            return False
+        if len(kw) <= 4:
+            pattern = r'\b' + re.escape(kw) + r'\b'
+            if re.search(pattern, text_to_check):
+                logger.warning(f"🚫 Excluded suspect medical/health/spam/media ad: '{ad_title[:45]}...' due to keyword: '{kw}'")
+                return False
+        else:
+            if kw in text_to_check:
+                logger.warning(f"🚫 Excluded suspect medical/health/spam/media ad: '{ad_title[:45]}...' due to keyword: '{kw}'")
+                return False
             
     return True
 
@@ -299,7 +315,7 @@ def is_blacklisted_or_junk_ad(
     Returns: (is_blacklisted, matched_reason)
     """
     # 1. Exact string exclusion check
-    if not is_valid_dropship_product(title, f"{body} {page_name} {landing_url}"):
+    if not is_valid_dropship_product(title, body=body, clean_name=page_name, landing_url=landing_url):
         return True, "Excluded by dropship product safety gate"
 
     # 2. Regex pattern exclusion check
@@ -347,6 +363,14 @@ def is_valid_ecommerce_landing_page(url: Optional[str]) -> bool:
     return True
 
 
+# ======================================================================================
+# Fresh Scaling Rule: The 3–14 Day Sweet Spot (Breakout Winners)
+# ======================================================================================
+MIN_DAYS_ACTIVE = 3       # Ignore ads launched yesterday (unproven)
+MAX_DAYS_ACTIVE = 14      # Ignore old, saturated, or recurring pharma ads (>14d)
+MIN_CREATIVE_COUNT = 3    # At least 3 ad versions running (proves ad spend scaling)
+
+
 class MetaAdInterceptor:
     """
     Captures internal Meta GraphQL and Relay SSR responses without OAuth tokens or official API rate limits.
@@ -385,10 +409,15 @@ class MetaAdInterceptor:
 
         return payloads
 
-    def extract_structured_ads(self, raw_payloads: List[Dict[str, Any]], min_days_active: int = 5) -> List[Dict[str, Any]]:
+    def extract_structured_ads(
+        self,
+        raw_payloads: List[Dict[str, Any]],
+        min_days_active: int = MIN_DAYS_ACTIVE,
+        max_days_active: int = MAX_DAYS_ACTIVE,
+    ) -> List[Dict[str, Any]]:
         """
         Parses internal Meta GraphQL structures to extract clean, actionable ad cards.
-        Enforces longevity detection, direct video/image extraction, and scaling density detection.
+        Enforces fresh scaling rule (3-14 days), direct video extraction, and scaling density.
         """
         extracted_ads = []
         seen_ad_ids = set()
@@ -422,8 +451,8 @@ class MetaAdInterceptor:
                             except Exception:
                                 pass
 
-                        # Filter: accept ads running >= min_days_active
-                        if days_active < min_days_active:
+                        # Fresh Scaling Rule: 3–14 Day Breakout Sweet Spot
+                        if not (min_days_active <= days_active <= max_days_active):
                             continue
 
                         snapshot = item.get("snapshot", {}) or {}
@@ -516,7 +545,12 @@ class MetaAdInterceptor:
         return extracted_ads
 
     async def intercept_meta_network(
-        self, page, keyword: str, country: str = "US", min_days_active: int = 5
+        self,
+        page,
+        keyword: str,
+        country: str = "US",
+        min_days_active: int = MIN_DAYS_ACTIVE,
+        max_days_active: int = MAX_DAYS_ACTIVE,
     ) -> List[Dict[str, Any]]:
         captured_payloads: List[Dict[str, Any]] = []
 
@@ -578,25 +612,35 @@ class MetaAdInterceptor:
         finally:
             page.remove_listener("response", handle_response)
 
-        structured_ads = self.extract_structured_ads(captured_payloads, min_days_active=min_days_active)
+        structured_ads = self.extract_structured_ads(
+            captured_payloads,
+            min_days_active=min_days_active,
+            max_days_active=max_days_active,
+        )
         return structured_ads
 
     async def discover_viral_products(
-        self, page, country: str = "IN", min_days_active: int = 5
+        self,
+        page,
+        country: str = "IN",
+        min_days_active: int = MIN_DAYS_ACTIVE,
+        max_days_active: int = MAX_DAYS_ACTIVE,
     ) -> List[Dict[str, Any]]:
         """
         Discovers active viral dropshipping/D2C products running in the specified country
         using randomized high-intent e-commerce seed footprints.
+        Enforces 3–14 day sweet spot.
         """
         country_code = country.upper()
         seeds = COUNTRY_VIRAL_FOOTPRINTS.get(country_code, COUNTRY_VIRAL_FOOTPRINTS["IN"])
         seed_phrase = random.choice(seeds)
-        logger.info(f"[Meta Viral Discovery] Scanning country={country_code} with viral seed: '{seed_phrase}'")
+        logger.info(f"[Meta Viral Discovery] Scanning country={country_code} ({min_days_active}-{max_days_active}d sweet spot) with seed: '{seed_phrase}'")
         return await self.intercept_meta_network(
             page=page,
             keyword=seed_phrase,
             country=country_code,
             min_days_active=min_days_active,
+            max_days_active=max_days_active,
         )
 
 
@@ -631,17 +675,19 @@ class ReverseNetworkScanner:
         self,
         keyword: Optional[str] = None,
         country: str = "IN",
-        min_days: int = 5,
+        min_days: int = MIN_DAYS_ACTIVE,
+        max_days: int = MAX_DAYS_ACTIVE,
         limit: int = 20,
     ) -> List[ScrapedAd]:
         """
         Intercepts Meta Ad Library unauthenticated internal GraphQL and Relay preloader
         JSON payloads. If keyword is None or 'viral', triggers automated viral discovery footprints.
+        Enforces Fresh Scaling Rule (3-14 day sweet spot).
         """
         country_code = "ALL" if country.upper() in ["ALL", "GLOBAL", "WORLDWIDE", "WW"] else country.upper()
         is_viral_mode = not keyword or keyword.strip().lower() in ["viral", "current viral", "scrape viral", "all"]
         log_term = f"Viral Discovery ({country_code})" if is_viral_mode else f"'{keyword}' ({country_code})"
-        logger.info(f"[Meta Reverse] Intercepting internal traffic for {log_term}...")
+        logger.info(f"[Meta Reverse] Intercepting internal traffic for {log_term} (sweet spot: {min_days}-{max_days}d)...")
 
         try:
             context = await browser_manager.create_stealth_context()
@@ -656,6 +702,7 @@ class ReverseNetworkScanner:
                     page=page,
                     country=country_code,
                     min_days_active=min_days,
+                    max_days_active=max_days,
                 )
             else:
                 raw_ads = await self.interceptor.intercept_meta_network(
@@ -663,6 +710,7 @@ class ReverseNetworkScanner:
                     keyword=keyword,
                     country=country_code,
                     min_days_active=min_days,
+                    max_days_active=max_days,
                 )
         except Exception as exc:
             logger.error(f"[Meta Reverse] Exception during network interception: {exc}")
@@ -676,20 +724,30 @@ class ReverseNetworkScanner:
 
         extracted_ads: List[ScrapedAd] = []
         for raw in raw_ads:
+            # Longevity Check: 3–14 Day Sweet Spot
+            days_active = raw.get("days_active", 0)
+            if not (min_days <= days_active <= max_days):
+                continue
+
             # Get title, body, and check exclusion list
             title = raw.get("title") or raw.get("raw_title") or raw.get("ad_title") or ""
             body = raw.get("body") or raw.get("body_text") or raw.get("ad_body") or ""
             cta_url = raw.get("cta_destination_url") or ""
+            page_name = raw.get("page_name", "")
 
-            if not is_valid_dropship_product(title, body):
-                continue  # skip clinical / inappropriate ads
+            # Strict Safety Gate: Exclude medical, nutra, adult, books, scams
+            if not is_valid_dropship_product(title, ad_body=body, clean_name=page_name, landing_url=cta_url):
+                continue
+
+            is_junk, _ = is_blacklisted_or_junk_ad(title=title, body=body, page_name=page_name, landing_url=cta_url)
+            if is_junk:
+                continue
 
             # E-Commerce Whitelist: Require recognizable dropship/storefront signals
             if not has_ecommerce_intent(f"{title} {body}", cta_url):
                 continue
 
             clean_title = sanitize_text(raw.get("raw_title", ""))
-            page_name = raw.get("page_name", "")
             if not clean_title or ("." in clean_title and len(clean_title.split()) <= 2):
                 if page_name and not is_viral_mode and keyword:
                     product_name = f"{page_name.strip()} - {keyword.strip().title()}"
@@ -730,7 +788,7 @@ class ReverseNetworkScanner:
             extracted_ads.append(ad)
 
         logger.info(
-            f"[Meta Reverse] Extracted {len(extracted_ads)} ads running >= {min_days} days."
+            f"[Meta Reverse] Extracted {len(extracted_ads)} ads running in sweet spot ({min_days}-{max_days}d)."
         )
         return extracted_ads[:limit]
 
@@ -738,62 +796,66 @@ class ReverseNetworkScanner:
         self,
         keyword: Optional[str] = None,
         country: str = "US",
-        min_days: int = 3,
+        min_days: int = MIN_DAYS_ACTIVE,
+        max_days: int = MAX_DAYS_ACTIVE,
+        min_creatives: int = MIN_CREATIVE_COUNT,
         limit: int = 3,
     ) -> List[ScrapedAd]:
         """
-        Directly discovers winning video ads from Meta Ad Library without strict margin discards.
-        Prioritizes active video creatives with proven longevity and valid e-commerce storefronts.
+        Directly discovers breakout winning video ads from Meta Ad Library.
+        Enforces Fresh Scaling Rule:
+        - 3–14 days active (breakout sweet spot)
+        - >= 3 creative variations running (proves ad spend scaling)
+        - Discards nutra, medical, digital books, and scam clickbait
+        - E-commerce intent signals required
+        - Video-first priority with direct MP4 playable streaming
         """
         is_viral = not keyword or keyword.strip().lower() in ["viral", "all", "trending"]
         search_kw = None if is_viral else keyword.strip()
 
-        # Primary scan with min_days
+        # Primary scan with Fresh Scaling sweet spot (3-14 days)
         raw_ads = await self.scan_meta_ads(
             keyword=search_kw,
             country=country,
             min_days=min_days,
-            limit=30,
+            max_days=max_days,
+            limit=40,
         )
-
-        # Fallback to 1-day threshold if initial scan yielded no ads
-        if not raw_ads and min_days > 1:
-            logger.info(f"[Meta Viral] No ads >= {min_days}d. Relaxing longevity filter to >= 1d...")
-            raw_ads = await self.scan_meta_ads(
-                keyword=search_kw,
-                country=country,
-                min_days=1,
-                limit=30,
-            )
 
         if not raw_ads:
             return []
 
-        # Secondary Quality Gate: Discard any nutra/medical/scam ads or ads lacking e-commerce signals
+        # Secondary Quality Gate: Verify clean physical dropship product
         clean_ads = [
             a for a in raw_ads
-            if is_valid_dropship_product(a.ad_title, a.ad_body)
-            and has_ecommerce_intent(f"{a.ad_title} {a.ad_body}", a.landing_page_url or "")
+            if is_valid_dropship_product(a.ad_title, ad_body=a.ad_body, clean_name=a.clean_product_name, landing_url=a.landing_page_url or "")
+            and has_ecommerce_intent(f"{a.ad_title} {a.ad_body} {a.clean_product_name}", a.landing_page_url or "")
             and not is_blacklisted_or_junk_ad(a.ad_title, a.ad_body, a.clean_product_name, a.landing_page_url or "")[0]
+            and (min_days <= a.days_active <= max_days)
         ]
 
         if not clean_ads:
-            clean_ads = raw_ads
+            logger.info(f"[Meta Viral] 0 clean physical dropship ads found matching {min_days}-{max_days}d sweet spot.")
+            return []
+
+        # Fresh Scaling Rule: Prioritize ads with >= min_creatives (indicates scaling ad spend)
+        scaling_ads = [a for a in clean_ads if a.creative_variations_count >= min_creatives]
+        candidate_pool = scaling_ads if scaling_ads else clean_ads
 
         # Video-First Priority: Dropshippers need playable video creatives
-        video_ads = [a for a in clean_ads if a.video_url]
+        video_ads = [a for a in candidate_pool if a.video_url]
         if video_ads:
-            video_ads.sort(key=lambda a: a.days_active, reverse=True)
+            video_ads.sort(key=lambda a: (a.creative_variations_count, a.days_active), reverse=True)
             return video_ads[:limit]
 
         # Clean physical product media fallback
-        media_ads = [a for a in clean_ads if a.image_url]
+        media_ads = [a for a in candidate_pool if a.image_url]
         if media_ads:
-            media_ads.sort(key=lambda a: a.days_active, reverse=True)
+            media_ads.sort(key=lambda a: (a.creative_variations_count, a.days_active), reverse=True)
             return media_ads[:limit]
 
-        clean_ads.sort(key=lambda a: a.days_active, reverse=True)
-        return clean_ads[:limit]
+        candidate_pool.sort(key=lambda a: (a.creative_variations_count, a.days_active), reverse=True)
+        return candidate_pool[:limit]
 
     async def scrape_viral_reels(
         self,
@@ -813,7 +875,9 @@ class ReverseNetworkScanner:
         ads = await self.scrape_viral_products(
             keyword=search_term,
             country=country_code,
-            min_days=2,
+            min_days=MIN_DAYS_ACTIVE,
+            max_days=MAX_DAYS_ACTIVE,
+            min_creatives=MIN_CREATIVE_COUNT,
             limit=limit,
         )
         return ads
@@ -945,7 +1009,8 @@ class ReverseNetworkScanner:
         self,
         keyword: Optional[str] = None,
         country: str = "IN",
-        min_days: int = 5,
+        min_days: int = MIN_DAYS_ACTIVE,
+        max_days: int = MAX_DAYS_ACTIVE,
         limit: int = 5,
         send_telegram: bool = False,
         max_wholesale_inr: Optional[float] = None,
@@ -957,7 +1022,13 @@ class ReverseNetworkScanner:
         - Evaluates unit economics (₹699 - ₹1,499 sweet spot), COD RTO risk, and 1688 wholesale.
         """
         # 1. Ingest winning ads
-        ads = await self.scan_meta_ads(keyword=keyword, country=country, min_days=min_days, limit=limit)
+        ads = await self.scan_meta_ads(
+            keyword=keyword,
+            country=country,
+            min_days=min_days,
+            max_days=max_days,
+            limit=limit,
+        )
         log_term = keyword or f"Viral Discovery ({country})"
         if not ads:
             logger.warning(f"No active ads found for {log_term} with >= {min_days} days running.")
