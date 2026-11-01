@@ -19,6 +19,11 @@ from rich.table import Table
 from config import settings
 from media_extractor import media_extractor
 from models import OpportunityEvaluation, RTORiskLevel, SaturationTier, ScrapedAd
+from utils.supplier_generator import (
+    build_9_supplier_keyboard,
+    extract_high_intent_keywords,
+    generate_supplier_links,
+)
 
 logger = logging.getLogger("TrendArbitrage.Notifier")
 console = Console(force_terminal=True, legacy_windows=False)
@@ -112,7 +117,7 @@ def format_telegram_alert(evaluation: OpportunityEvaluation) -> str:
 
 
 def format_viral_ad_card(ad: ScrapedAd) -> str:
-    """Formats a clean, high-impact viral product card for Telegram."""
+    """Formats a clean, high-impact viral product card for Telegram with keywords."""
     store_link = f"[Store Link]({ad.landing_page_url})" if ad.landing_page_url else "N/A"
     ad_link = f"[View Meta Ad]({ad.ad_library_url})"
     scaling_badge = (
@@ -121,11 +126,15 @@ def format_viral_ad_card(ad: ScrapedAd) -> str:
         else ("⚡ PROVEN WINNER" if ad.days_active >= 7 else "🌱 PROMISING TEST")
     )
 
+    keywords = extract_high_intent_keywords(ad.clean_product_name, ad.ad_body)
+    kw_str = " | ".join([f"`{k}`" for k in keywords[:3]]) if keywords else f"`{ad.clean_product_name.lower()}`"
+
     caption = (
         f"🔥 *VIRAL DROPSHIPPING PRODUCT* 🔥\n"
         f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
         f"📦 *Product:* `{ad.clean_product_name}`\n"
-        f"🚀 *Scaling Status:* *{scaling_badge}*\n\n"
+        f"🚀 *Scaling Status:* *{scaling_badge}*\n"
+        f"🎯 *High-Intent Keywords:* {kw_str}\n\n"
         f"📊 *Ad Traction ({ad.source_country})*:\n"
         f"• Running for: *{ad.days_active} consecutive days*\n"
         f"• Active Creatives: *{ad.creative_variations_count} variations*\n"
@@ -137,26 +146,19 @@ def format_viral_ad_card(ad: ScrapedAd) -> str:
 
 
 def build_viral_keyboard(ad: ScrapedAd) -> Dict[str, Any]:
-    """Generates direct 1-click supplier and marketplace action buttons."""
-    encoded_query = urllib.parse.quote_plus(ad.clean_product_name)
-    aliexpress_url = f"https://www.aliexpress.com/wholesale?SearchText={encoded_query}"
-    meesho_url = f"https://www.meesho.com/search?q={encoded_query}"
-    yiwugo_url = f"https://en.yiwugo.com/search/s.html?q={encoded_query}"
-
-    keyboard = [
-        [
-            {"text": "🏭 1688 / YiwuGo Factory", "url": yiwugo_url},
-            {"text": "📦 AliExpress", "url": aliexpress_url},
-        ],
-        [
-            {"text": "🛒 Check Meesho", "url": meesho_url},
-        ],
-    ]
-    if ad.landing_page_url and ad.landing_page_url.startswith("http"):
-        keyboard.append([{"text": "🌐 Visit Storefront", "url": ad.landing_page_url}])
-
-    keyboard.append([{"text": "🔥 Next Viral Winner", "callback_data": "action:next_viral"}])
-    return {"inline_keyboard": keyboard}
+    """
+    Generates direct 1-click supplier buttons for:
+    1688, Alibaba, YiwuGo, AliExpress, CJ Dropshipping, IndiaMART, Meesho, Temu, Amazon.
+    """
+    keyboard_dict = build_9_supplier_keyboard(
+        clean_product_name=ad.clean_product_name,
+        landing_page_url=ad.landing_page_url,
+        ad_library_url=ad.ad_library_url,
+    )
+    keyboard_dict["inline_keyboard"].append([
+        {"text": "🔥 Next Viral Winner", "callback_data": "action:next_viral"}
+    ])
+    return keyboard_dict
 
 
 def build_inline_keyboard(ad: ScrapedAd, evaluation: OpportunityEvaluation) -> Dict[str, Any]:
