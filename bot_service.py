@@ -767,6 +767,14 @@ def main():
     # Start cloud health server if PORT is defined (Render requirement)
     start_render_health_server()
 
+    # If running on cloud (PORT is set) and RENDER_POLLING is not enabled,
+    # keep HTTP health server alive in standby so local laptop has exclusive polling access.
+    if os.environ.get("PORT") and os.environ.get("RENDER_POLLING", "").lower() not in ["true", "1", "yes"]:
+        logger.info(f"Render Standby: Health server active on port {os.environ.get('PORT')}. Telegram polling disabled so local laptop can run.")
+        import time
+        while True:
+            time.sleep(3600)
+
     logger.info(f"Initializing Viral Video Scraper Daemon for bot token prefix: {token[:10]}...")
     app = Application.builder().token(token).build()
 
