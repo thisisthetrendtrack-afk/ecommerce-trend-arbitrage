@@ -91,35 +91,55 @@ def find_nodes_by_key(root: Any, target_key: str) -> List[Any]:
 # Meta Ad Library Zero-API Interceptor
 # ======================================================================================
 
+VIRAL_ECOMM_FOOTPRINTS = [
+    # Checkout & Store triggers
+    '"50% OFF" "Free Worldwide Shipping"',
+    '"Claim yours now" "Limited Stock"',
+    '"Get yours here:" myshopify.com',
+    '"Click the link below to get yours"',
+    '"Track your order" "Shop Now"',
+    
+    # Viral Social proof hooks
+    '"TikTok made me buy it"',
+    '"Going viral on TikTok"',
+    '"As seen on Instagram"',
+    '"Link in bio to shop"',
+    
+    # COD / Regional dropshipping hooks (IN / AE)
+    '"Cash on Delivery Available" "Free Shipping"',
+    '"Order now pay on delivery"',
+]
+
 COUNTRY_VIRAL_FOOTPRINTS: Dict[str, List[str]] = {
-    "ALL": [
-        '"TikTok made me buy it" "Shop Now"',
-        '"Amazon finds you need" "Shop Now"',
-        '"Viral gadget" "Free shipping"',
-        '"Trending product" "Order Now"',
-        '"Link in bio" "Free shipping" "gadget"',
-        '"50% off" "Free shipping" "gadget"',
-    ],
+    "ALL": VIRAL_ECOMM_FOOTPRINTS,
     "IN": [
+        '"Cash on Delivery Available" "Free Shipping"',
+        '"Order now pay on delivery"',
         '"TikTok made me buy it" "Cash on delivery"',
-        '"Free shipping all over India" "Order Now" "gadget"',
-        '"Pay on delivery" "Viral gadget"',
+        '"Free shipping all over India" "Order Now"',
+        '"Pay on delivery" "Shop Now"',
+        '"Get yours here:" myshopify.com',
     ],
     "US": [
-        '"TikTok made me buy it" "Shop Now"',
-        '"Amazon finds you need" "Link in bio"',
-        '"Viral gadget" "Free shipping"',
-        '"Viral product" "Shop Now"',
+        '"50% OFF" "Free Worldwide Shipping"',
+        '"Claim yours now" "Limited Stock"',
+        '"Get yours here:" myshopify.com',
+        '"TikTok made me buy it"',
+        '"Going viral on TikTok"',
+        '"Track your order" "Shop Now"',
     ],
     "AE": [
-        '"TikTok made me buy it" "Cash on delivery"',
-        '"Free delivery UAE" "Order Now" "gadget"',
+        '"Cash on Delivery Available" "Free Shipping"',
+        '"Order now pay on delivery"',
+        '"Free delivery UAE" "Shop Now"',
+        '"TikTok made me buy it" "UAE"',
     ],
     "GB": [
-        '"TikTok made me buy it" "gadget"',
-        '"Viral gadget" "Free UK delivery"',
-        '"Trending product" "Order Now" "UK"',
-        '"Amazon finds" "gadget" "Shop Now"',
+        '"50% OFF" "Free UK delivery"',
+        '"TikTok made me buy it" "UK"',
+        '"Get yours here:" myshopify.com',
+        '"Going viral on TikTok"',
+        '"Track your order" "Shop Now"',
     ],
 }
 
