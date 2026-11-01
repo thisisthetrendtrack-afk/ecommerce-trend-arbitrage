@@ -17,7 +17,7 @@ import httpx
 logger = logging.getLogger("TrendArbitrage.MediaExtractor")
 
 TEMP_MEDIA_DIR = Path("./temp_media")
-MAX_TELEGRAM_MEDIA_BYTES = 25 * 1024 * 1024  # 25 MB safety limit for Telegram Bot API uploads
+MAX_TELEGRAM_MEDIA_BYTES = 48 * 1024 * 1024  # 48 MB limit (Telegram Bot API allows up to 50MB)
 
 
 class MediaAssetExtractor:
