@@ -111,6 +111,54 @@ def format_telegram_alert(evaluation: OpportunityEvaluation) -> str:
     return text
 
 
+def format_viral_ad_card(ad: ScrapedAd) -> str:
+    """Formats a clean, high-impact viral product card for Telegram."""
+    store_link = f"[Store Link]({ad.landing_page_url})" if ad.landing_page_url else "N/A"
+    ad_link = f"[View Meta Ad]({ad.ad_library_url})"
+    scaling_badge = (
+        "🔥 HEAVILY SCALING"
+        if ad.creative_variations_count >= 3
+        else ("⚡ PROVEN WINNER" if ad.days_active >= 7 else "🌱 PROMISING TEST")
+    )
+
+    caption = (
+        f"🔥 *VIRAL DROPSHIPPING PRODUCT* 🔥\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"📦 *Product:* `{ad.clean_product_name}`\n"
+        f"🚀 *Scaling Status:* *{scaling_badge}*\n\n"
+        f"📊 *Ad Traction ({ad.source_country})*:\n"
+        f"• Running for: *{ad.days_active} consecutive days*\n"
+        f"• Active Creatives: *{ad.creative_variations_count} variations*\n"
+        f"• 🎬 *Live Meta Ad:* {ad_link}\n"
+        f"• 🌐 *Storefront:* {store_link}\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    )
+    return caption
+
+
+def build_viral_keyboard(ad: ScrapedAd) -> Dict[str, Any]:
+    """Generates direct 1-click supplier and marketplace action buttons."""
+    encoded_query = urllib.parse.quote_plus(ad.clean_product_name)
+    aliexpress_url = f"https://www.aliexpress.com/wholesale?SearchText={encoded_query}"
+    meesho_url = f"https://www.meesho.com/search?q={encoded_query}"
+    yiwugo_url = f"https://en.yiwugo.com/search/s.html?q={encoded_query}"
+
+    keyboard = [
+        [
+            {"text": "🏭 1688 / YiwuGo Factory", "url": yiwugo_url},
+            {"text": "📦 AliExpress", "url": aliexpress_url},
+        ],
+        [
+            {"text": "🛒 Check Meesho", "url": meesho_url},
+        ],
+    ]
+    if ad.landing_page_url and ad.landing_page_url.startswith("http"):
+        keyboard.append([{"text": "🌐 Visit Storefront", "url": ad.landing_page_url}])
+
+    keyboard.append([{"text": "🔥 Next Viral Winner", "callback_data": "action:next_viral"}])
+    return {"inline_keyboard": keyboard}
+
+
 def build_inline_keyboard(ad: ScrapedAd, evaluation: OpportunityEvaluation) -> Dict[str, Any]:
     """Generates Telegram inline action buttons beneath the creative asset."""
     query = urllib.parse.quote_plus(ad.clean_product_name)
@@ -306,6 +354,120 @@ class TelegramDispatcher:
                     return False
             except Exception as exc:
                 logger.error(f"Telegram dispatch exception: {exc}")
+                return False
+
+    async def send_viral_ad(self, ad: ScrapedAd, target_chat_id: Optional[str] = None) -> bool:
+        """
+        Delivers clean viral product video alert directly to Telegram:
+        1. Playable MP4 Video Creative with direct streaming.
+        2. Clean Product Name + Scaling traction + Storefront link.
+        3. Inline action buttons for 1-Click Factory (1688/AliExpress) & Meesho checks.
+        """
+        if not settings.is_telegram_configured:
+            logger.info("Telegram not configured or disabled; skipping dispatch.")
+            return False
+
+        dest_chat_id = str(target_chat_id or self.chat_id)
+        caption = format_viral_ad_card(ad)
+        reply_markup = build_viral_keyboard(ad)
+        reply_markup_json = json.dumps(reply_markup)
+
+        async with httpx.AsyncClient(timeout=35.0) as client:
+            # CASE A: Video Creative Available (.MP4)
+            if ad.video_url and ad.video_url.startswith("http"):
+                local_vid_path = None
+                try:
+                    logger.info(f"[Telegram] Streaming MP4 video creative for {ad.clean_product_name}...")
+                    local_vid_path = await media_extractor.stream_and_download_media(ad.video_url, is_video=True)
+                    if local_vid_path and local_vid_path.exists():
+                        send_vid_url = f"https://api.telegram.org/bot{self.bot_token}/sendVideo"
+                        with open(local_vid_path, "rb") as vid_file:
+                            files = {"video": (local_vid_path.name, vid_file, "video/mp4")}
+                            data = {
+                                "chat_id": dest_chat_id,
+                                "caption": caption,
+                                "parse_mode": "Markdown",
+                                "supports_streaming": "true",
+                                "reply_markup": reply_markup_json,
+                            }
+                            resp = await client.post(send_vid_url, data=data, files=files)
+                            if resp.status_code != 200:
+                                vid_file.seek(0)
+                                data.pop("parse_mode", None)
+                                resp = await client.post(send_vid_url, data=data, files=files)
+                        if resp.status_code == 200:
+                            logger.info(f"✅ Playable MP4 Video delivered for: {ad.clean_product_name}")
+                            return True
+                except Exception as vid_err:
+                    logger.warning(f"Failed sending video creative: {vid_err}")
+                finally:
+                    media_extractor.cleanup_file(local_vid_path)
+
+            # CASE B: Image Creative Fallback
+            if ad.image_url and ad.image_url.startswith("http"):
+                local_img_path = None
+                try:
+                    local_img_path = await media_extractor.stream_and_download_media(ad.image_url, is_video=False)
+                    send_photo_url = f"https://api.telegram.org/bot{self.bot_token}/sendPhoto"
+                    if local_img_path and local_img_path.exists():
+                        with open(local_img_path, "rb") as img_file:
+                            files = {"photo": (local_img_path.name, img_file, "image/jpeg")}
+                            data = {
+                                "chat_id": dest_chat_id,
+                                "caption": caption,
+                                "parse_mode": "Markdown",
+                                "reply_markup": reply_markup_json,
+                            }
+                            resp = await client.post(send_photo_url, data=data, files=files)
+                            if resp.status_code != 200:
+                                img_file.seek(0)
+                                data.pop("parse_mode", None)
+                                resp = await client.post(send_photo_url, data=data, files=files)
+                    else:
+                        resp = await client.post(
+                            send_photo_url,
+                            json={
+                                "chat_id": dest_chat_id,
+                                "photo": ad.image_url,
+                                "caption": caption,
+                                "parse_mode": "Markdown",
+                                "reply_markup": reply_markup,
+                            }
+                        )
+                        if resp.status_code != 200:
+                            resp = await client.post(
+                                send_photo_url,
+                                json={
+                                    "chat_id": dest_chat_id,
+                                    "photo": ad.image_url,
+                                    "caption": caption,
+                                    "reply_markup": reply_markup,
+                                }
+                            )
+                    if resp.status_code == 200:
+                        logger.info(f"✅ Photo delivered for: {ad.clean_product_name}")
+                        return True
+                except Exception as img_err:
+                    logger.warning(f"Failed sending photo creative: {img_err}")
+                finally:
+                    media_extractor.cleanup_file(local_img_path)
+
+            # CASE C: Text Fallback
+            try:
+                send_msg_url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
+                payload = {
+                    "chat_id": dest_chat_id,
+                    "text": caption,
+                    "parse_mode": "Markdown",
+                    "reply_markup": reply_markup,
+                }
+                resp = await client.post(send_msg_url, json=payload)
+                if resp.status_code != 200:
+                    payload.pop("parse_mode", None)
+                    resp = await client.post(send_msg_url, json=payload)
+                return resp.status_code == 200
+            except Exception as exc:
+                logger.error(f"Telegram dispatch error: {exc}")
                 return False
 
 

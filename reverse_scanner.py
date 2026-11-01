@@ -501,6 +501,48 @@ class ReverseNetworkScanner:
         )
         return extracted_ads[:limit]
 
+    async def scrape_viral_products(
+        self,
+        keyword: Optional[str] = None,
+        country: str = "US",
+        min_days: int = 3,
+        limit: int = 3,
+    ) -> List[ScrapedAd]:
+        """
+        Directly discovers winning video ads from Meta Ad Library without strict margin discards.
+        Prioritizes active video creatives with proven longevity and valid e-commerce storefronts.
+        """
+        is_viral = not keyword or keyword.strip().lower() in ["viral", "all", "trending"]
+        search_kw = None if is_viral else keyword.strip()
+
+        # Primary scan with min_days
+        raw_ads = await self.scan_meta_ads(
+            keyword=search_kw,
+            country=country,
+            min_days=min_days,
+            limit=30,
+        )
+
+        # Fallback to 1-day threshold if initial scan yielded no ads
+        if not raw_ads and min_days > 1:
+            logger.info(f"[Meta Viral] No ads >= {min_days}d. Relaxing longevity filter to >= 1d...")
+            raw_ads = await self.scan_meta_ads(
+                keyword=search_kw,
+                country=country,
+                min_days=1,
+                limit=30,
+            )
+
+        if not raw_ads:
+            return []
+
+        # Sort ads: prioritize video creatives, then longevity (days active)
+        raw_ads.sort(key=lambda a: (bool(a.video_url), a.days_active), reverse=True)
+
+        # Prefer ads that have video or image
+        media_ads = [a for a in raw_ads if a.video_url or a.image_url]
+        return media_ads[:limit] if media_ads else raw_ads[:limit]
+
     # ----------------------------------------------------------------------------------
     # 2. Reverse Engineering Meesho Public Search (Internal API & NEXT_DATA)
     # ----------------------------------------------------------------------------------
