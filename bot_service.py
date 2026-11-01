@@ -61,6 +61,7 @@ except ImportError:
 from config import settings
 from notifier import TelegramDispatcher
 from reverse_scanner import ReverseNetworkScanner
+from tiktok_scraper import tiktok_scraper
 
 log_handlers = [logging.FileHandler("bot_daemon.log", encoding="utf-8")]
 try:
@@ -104,6 +105,10 @@ def get_user_country(user_id: int) -> str:
 def get_main_menu_markup(current_country: str = "US") -> InlineKeyboardMarkup:
     """Generates the primary action dashboard."""
     keyboard = [
+        [
+            InlineKeyboardButton("📱 Viral Reels (9:16)", callback_data=f"reels:{current_country}"),
+            InlineKeyboardButton("🎵 TikTok Top Ads", callback_data=f"tiktok:{current_country}"),
+        ],
         [
             InlineKeyboardButton(f"🔥 Viral Feed ({current_country})", callback_data=f"feed:{current_country}"),
             InlineKeyboardButton("🇮🇳 India Feed", callback_data="feed:IN"),
@@ -236,6 +241,193 @@ async def run_viral_scraper(
         )
 
 
+async def run_tiktok_scraper(
+    chat_id: int,
+    context: ContextTypes.DEFAULT_TYPE,
+    keyword: Optional[str] = None,
+    country: str = "US",
+    limit: int = 3,
+    status_msg_id: Optional[int] = None,
+) -> None:
+    """
+    Scrapes top-performing e-commerce video ads from TikTok Creative Center.
+    Falls back gracefully to TikTok-style viral reels if TikTok is regionally blocked.
+    """
+    country_code = country.upper()
+    is_kw = bool(keyword and keyword.strip())
+    label = f'for *"{keyword}"*' if is_kw else "*top converting e-com ads*"
+
+    status_text = (
+        f"🎵 *Scraping TikTok Top Ads* {label}\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"• Platform: `TikTok Creative Center`\n"
+        f"• Region: `{country_code}`\n"
+        f"• Format: *9:16 Vertical Video Creatives*\n\n"
+        f"🔎 Intercepting top converting TikTok ads...\n"
+        f"⏱️ _Please wait ~8-15 seconds..._"
+    )
+
+    if status_msg_id:
+        try:
+            await context.bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=status_msg_id,
+                text=status_text,
+                parse_mode=ParseMode.MARKDOWN,
+            )
+        except Exception:
+            status_msg = await context.bot.send_message(chat_id=chat_id, text=status_text, parse_mode=ParseMode.MARKDOWN)
+            status_msg_id = status_msg.message_id
+    else:
+        status_msg = await context.bot.send_message(chat_id=chat_id, text=status_text, parse_mode=ParseMode.MARKDOWN)
+        status_msg_id = status_msg.message_id
+
+    try:
+        # First attempt: Direct TikTok Creative Center
+        ads = await tiktok_scraper.scrape_tiktok_ads(
+            keyword=keyword,
+            country=country_code,
+            limit=limit,
+        )
+
+        # Fallback: If TikTok returned 0 (e.g. regional ISP block before cloud deployment)
+        if not ads:
+            logger.info("[TikTok Fallback] Pulling TikTok-style viral vertical reels via Meta...")
+            ads = await scanner.scrape_viral_reels(
+                keyword=keyword or "TikTok made me buy it",
+                country=country_code,
+                limit=limit,
+            )
+
+        if not ads:
+            no_ads_text = f"❌ *No viral TikTok ads found* {label} in `{country_code}`.\n\n💡 _Tip: Try another product keyword or tap below:_"
+            retry_markup = InlineKeyboardMarkup([
+                [InlineKeyboardButton("📱 Scrape Viral Reels", callback_data=f"reels:{country_code}")],
+                [InlineKeyboardButton("⬅️ Main Menu", callback_data="action:start")],
+            ])
+            await context.bot.send_message(chat_id=chat_id, text=no_ads_text, parse_mode=ParseMode.MARKDOWN, reply_markup=retry_markup)
+            return
+
+        delivered = 0
+        for ad in ads:
+            success = await dispatcher.send_viral_ad(ad, target_chat_id=str(chat_id))
+            if success:
+                delivered += 1
+            await asyncio.sleep(1.0)
+
+        done_markup = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("🎵 More TikTok Ads", callback_data=f"tiktok:{country_code}"),
+                InlineKeyboardButton("📱 Viral Reels", callback_data=f"reels:{country_code}"),
+            ],
+            [InlineKeyboardButton("🔄 Main Menu", callback_data="action:start")],
+        ])
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=f"✅ *Delivered {delivered} viral TikTok products!*\n\n_Type any new keyword to search again or tap below:_",
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=done_markup,
+        )
+
+    except Exception as exc:
+        logger.error(f"TikTok scraper error: {exc}", exc_info=True)
+        err_markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔄 Main Menu", callback_data="action:start")]])
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=f"⚠️ *An error occurred:*\n`{str(exc)[:160]}`",
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=err_markup,
+        )
+
+
+async def run_reels_scraper(
+    chat_id: int,
+    context: ContextTypes.DEFAULT_TYPE,
+    keyword: Optional[str] = None,
+    country: str = "US",
+    limit: int = 3,
+    status_msg_id: Optional[int] = None,
+) -> None:
+    """
+    Scrapes 9:16 vertical video reels (Instagram Reels & FB Reels) with viral triggers.
+    """
+    country_code = country.upper()
+    is_kw = bool(keyword and keyword.strip())
+    label = f'for *"{keyword}"*' if is_kw else "*viral vertical reels*"
+
+    status_text = (
+        f"📱 *Scraping Viral Reels (9:16)* {label}\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"• Platform: `Instagram & FB Reels`\n"
+        f"• Country: `{country_code}`\n"
+        f"• Triggers: *'TikTok made me buy it' / 'Link in bio'*\n\n"
+        f"🔎 Intercepting full-screen video reels...\n"
+        f"⏱️ _Please wait ~8-15 seconds..._"
+    )
+
+    if status_msg_id:
+        try:
+            await context.bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=status_msg_id,
+                text=status_text,
+                parse_mode=ParseMode.MARKDOWN,
+            )
+        except Exception:
+            status_msg = await context.bot.send_message(chat_id=chat_id, text=status_text, parse_mode=ParseMode.MARKDOWN)
+            status_msg_id = status_msg.message_id
+    else:
+        status_msg = await context.bot.send_message(chat_id=chat_id, text=status_text, parse_mode=ParseMode.MARKDOWN)
+        status_msg_id = status_msg.message_id
+
+    try:
+        ads = await scanner.scrape_viral_reels(
+            keyword=keyword,
+            country=country_code,
+            limit=limit,
+        )
+
+        if not ads:
+            no_ads_text = f"❌ *No viral reels found* {label} in `{country_code}`.\n\n💡 _Tip: Try another product keyword or tap below:_"
+            retry_markup = InlineKeyboardMarkup([
+                [InlineKeyboardButton("🎵 Try TikTok Top Ads", callback_data=f"tiktok:{country_code}")],
+                [InlineKeyboardButton("⬅️ Main Menu", callback_data="action:start")],
+            ])
+            await context.bot.send_message(chat_id=chat_id, text=no_ads_text, parse_mode=ParseMode.MARKDOWN, reply_markup=retry_markup)
+            return
+
+        delivered = 0
+        for ad in ads:
+            success = await dispatcher.send_viral_ad(ad, target_chat_id=str(chat_id))
+            if success:
+                delivered += 1
+            await asyncio.sleep(1.0)
+
+        done_markup = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("📱 More Viral Reels", callback_data=f"reels:{country_code}"),
+                InlineKeyboardButton("🎵 TikTok Top Ads", callback_data=f"tiktok:{country_code}"),
+            ],
+            [InlineKeyboardButton("🔄 Main Menu", callback_data="action:start")],
+        ])
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=f"✅ *Delivered {delivered} viral 9:16 video reels!*\n\n_Type any new keyword to search again or tap below:_",
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=done_markup,
+        )
+
+    except Exception as exc:
+        logger.error(f"Reels scraper error: {exc}", exc_info=True)
+        err_markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔄 Main Menu", callback_data="action:start")]])
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=f"⚠️ *An error occurred:*\n`{str(exc)[:160]}`",
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=err_markup,
+        )
+
+
 # ======================================================================================
 # HANDLERS (COMMANDS, CALLBACKS, TEXT MESSAGES)
 # ======================================================================================
@@ -250,9 +442,9 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     text = (
         "🔥 *Viral Dropshipping Video Scraper* 🔥\n"
         "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        "Scrapes active, scaling video ads from Meta Ad Library with direct playable MP4 videos, clean product names, and Shopify store links.\n\n"
+        "Scrapes winning, scaling video ads from **Meta Ad Library, Instagram Reels & TikTok** with direct playable MP4 videos, clean product names, and Shopify store links.\n\n"
         f"🌍 *Active Country:* `{country}`\n\n"
-        "👇 *Tap a button to get winning products or simply type any product name:*"
+        "👇 *Tap an option below or simply type any product keyword:*"
     )
     await update.message.reply_text(
         text=text,
@@ -270,17 +462,55 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     text = (
         "📖 *How to Use the Viral Video Scraper*\n"
         "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        "• *Find Viral Winners:* Tap *[🔥 Viral Feed]* or type `/viral`\n"
-        "• *Search Any Product:* Simply send the name into chat (e.g. `galaxy projector`, `sunset lamp`, `car cleaner`)\n"
+        "• *Find Meta Winners:* Tap *[🔥 Viral Feed]* or type `/viral`\n"
+        "• *Find TikTok Top Ads:* Tap *[🎵 TikTok Top Ads]* or type `/tiktok`\n"
+        "• *Find 9:16 Vertical Reels:* Tap *[📱 Viral Reels]* or type `/reels`\n"
+        "• *Search Any Keyword:* Simply send the name into chat (e.g. `galaxy projector`, `sunset lamp`)\n"
         "• *Target Country:* `/country US`, `/country IN`, `/country AE`, or `/country GB`\n\n"
         "📦 *Every Alert Delivers:*\n"
-        "1. Playable MP4 Video Creative\n"
+        "1. Full Playable MP4 Video (Watch directly in chat)\n"
         "2. Clean Product Title\n"
-        "3. Active Running Days (Proof of ad spend)\n"
+        "3. Active Running Longevity (Proven ad spend)\n"
         "4. Live Storefront Link (Shopify/D2C landing page)\n"
         "5. 1-Click Factory Buttons (1688 / YiwuGo / AliExpress / Meesho)"
     )
     await update.message.reply_text(text=text, parse_mode=ParseMode.MARKDOWN)
+
+
+async def tiktok_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Scrapes top TikTok e-commerce video ads: /tiktok or /tiktok <niche>."""
+    user_id = update.effective_user.id
+    if not is_authorized(user_id):
+        return
+
+    args = context.args
+    query = " ".join(args).strip() if args else None
+    country = get_user_country(user_id)
+    await run_tiktok_scraper(
+        chat_id=update.effective_chat.id,
+        context=context,
+        keyword=query,
+        country=country,
+        limit=3,
+    )
+
+
+async def reels_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Scrapes 9:16 vertical short-form reels: /reels or /reels <niche>."""
+    user_id = update.effective_user.id
+    if not is_authorized(user_id):
+        return
+
+    args = context.args
+    query = " ".join(args).strip() if args else None
+    country = get_user_country(user_id)
+    await run_reels_scraper(
+        chat_id=update.effective_chat.id,
+        context=context,
+        keyword=query,
+        country=country,
+        limit=3,
+    )
 
 
 async def viral_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -406,6 +636,30 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
             limit=2,
         )
 
+    elif data.startswith("tiktok:"):
+        country = data.split(":")[1]
+        session["country"] = country
+        await run_tiktok_scraper(
+            chat_id=chat_id,
+            context=context,
+            keyword=None,
+            country=country,
+            limit=3,
+            status_msg_id=query.message.message_id,
+        )
+
+    elif data.startswith("reels:"):
+        country = data.split(":")[1]
+        session["country"] = country
+        await run_reels_scraper(
+            chat_id=chat_id,
+            context=context,
+            keyword=None,
+            country=country,
+            limit=3,
+            status_msg_id=query.message.message_id,
+        )
+
     elif data == "action:country_menu":
         await query.edit_message_text(
             "🌍 *Select Target Country:*\nChoose which regional Meta Ad Library to query for scaling winning products:",
@@ -496,6 +750,8 @@ def main():
     # Register handlers
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("viral", viral_command))
+    app.add_handler(CommandHandler("tiktok", tiktok_command))
+    app.add_handler(CommandHandler("reels", reels_command))
     app.add_handler(CommandHandler("scrape", scrape_command))
     app.add_handler(CommandHandler("search", scrape_command))
     app.add_handler(CommandHandler("country", country_command))

@@ -111,6 +111,27 @@ COUNTRY_VIRAL_FOOTPRINTS: Dict[str, List[str]] = {
     ],
 }
 
+COUNTRY_REELS_FOOTPRINTS: Dict[str, List[str]] = {
+    "IN": [
+        '"TikTok made me buy it"',
+        '"Link in bio" "Cash on delivery"',
+        '"Viral gadget" "Order Now"',
+    ],
+    "US": [
+        '"TikTok made me buy it" "Shop Now"',
+        '"Amazon finds you need" "Link in bio"',
+        '"Viral product" "50% off"',
+    ],
+    "AE": [
+        '"TikTok made me buy it" "UAE"',
+        '"Link in bio" "Free delivery"',
+    ],
+    "GB": [
+        '"TikTok made me buy it" "UK"',
+        '"Amazon finds" "Shop Now"',
+    ],
+}
+
 
 def is_valid_ecommerce_landing_page(url: Optional[str]) -> bool:
     """
@@ -542,6 +563,29 @@ class ReverseNetworkScanner:
         # Prefer ads that have video or image
         media_ads = [a for a in raw_ads if a.video_url or a.image_url]
         return media_ads[:limit] if media_ads else raw_ads[:limit]
+
+    async def scrape_viral_reels(
+        self,
+        keyword: Optional[str] = None,
+        country: str = "US",
+        limit: int = 3,
+    ) -> List[ScrapedAd]:
+        """
+        Scrapes 9:16 vertical short-form reels ads (Instagram & Facebook Reels)
+        matching high-engagement viral triggers like 'TikTok made me buy it' & 'Link in bio'.
+        """
+        country_code = country.upper()
+        seeds = COUNTRY_REELS_FOOTPRINTS.get(country_code, COUNTRY_REELS_FOOTPRINTS["US"])
+        search_term = keyword.strip() if keyword and keyword.strip() else random.choice(seeds)
+
+        logger.info(f"[Viral Reels] Scanning vertical reels for term='{search_term}' ({country_code})...")
+        ads = await self.scrape_viral_products(
+            keyword=search_term,
+            country=country_code,
+            min_days=2,
+            limit=limit,
+        )
+        return ads
 
     # ----------------------------------------------------------------------------------
     # 2. Reverse Engineering Meesho Public Search (Internal API & NEXT_DATA)
