@@ -62,6 +62,18 @@ from config import settings
 from notifier import TelegramDispatcher
 from reverse_scanner import ReverseNetworkScanner
 
+log_handlers = [logging.FileHandler("bot_daemon.log", encoding="utf-8")]
+try:
+    if sys.stdout and hasattr(sys.stdout, "closed") and not sys.stdout.closed:
+        log_handlers.append(logging.StreamHandler(sys.stdout))
+except Exception:
+    pass
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    handlers=log_handlers,
+)
 logger = logging.getLogger("TrendArbitrage.TelegramBot")
 
 # In-memory user session state store
