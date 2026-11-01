@@ -4,7 +4,8 @@ Viral Dropshipping Product & Video Scraper (bot_service.py)
 ========================================================================================
 A clean, fast Telegram bot that scrapes winning, scaling video ads from Meta Ad Library.
 Features:
-- Instant 1-click viral video feed (US, IN, UAE, UK)
+- Instant 1-click viral video feed (Global, US, IN, UAE, UK)
+- TikTok Top Ads & 9:16 Vertical Video Reels
 - Direct keyword search (just type any product name)
 - Playable MP4 video streaming directly in Telegram
 - 1-click supplier buttons (1688, YiwuGo, AliExpress, Meesho)
@@ -14,6 +15,7 @@ Features:
 
 import asyncio
 from http.server import BaseHTTPRequestHandler, HTTPServer
+import html
 import io
 import json
 import logging
@@ -85,17 +87,24 @@ scanner = ReverseNetworkScanner()
 dispatcher = TelegramDispatcher()
 
 
+def escape_md(text: str) -> str:
+    """Safely escapes characters for Telegram legacy Markdown."""
+    if not text:
+        return ""
+    return re.sub(r"([_*`\[\]])", r"\\\1", str(text))
+
+
 def is_authorized(user_id: int) -> bool:
     """Validates if user is the authorized chat ID."""
-    if not settings.TELEGRAM_CHAT_ID:
+    if not getattr(settings, "TELEGRAM_CHAT_ID", None):
         return True
     return str(user_id) == str(settings.TELEGRAM_CHAT_ID)
 
 
 def get_user_country(user_id: int) -> str:
-    """Returns the user's active country preference (defaults to US)."""
+    """Returns the user's active country preference (defaults to ALL)."""
     session = user_sessions.setdefault(user_id, {})
-    return session.get("country", "US")
+    return session.get("country", "ALL")
 
 
 # ======================================================================================
@@ -156,7 +165,7 @@ async def run_viral_scraper(
     chat_id: int,
     context: ContextTypes.DEFAULT_TYPE,
     keyword: Optional[str] = None,
-    country: str = "US",
+    country: str = "ALL",
     limit: int = 3,
     status_msg_id: Optional[int] = None,
 ) -> None:
@@ -164,8 +173,10 @@ async def run_viral_scraper(
     Executes the streamlined viral video scraper and sends playable MP4 videos to Telegram.
     """
     country_code = country.upper()
-    is_keyword = bool(keyword and keyword.strip())
-    label = f'for *"{keyword}"*' if is_keyword else "*current viral scaling winners*"
+    clean_keyword = keyword.strip() if keyword else None
+    is_keyword = bool(clean_keyword)
+    escaped_kw = escape_md(clean_keyword) if clean_keyword else ""
+    label = f'for *"{escaped_kw}"*' if is_keyword else "*current viral scaling winners*"
 
     status_text = (
         f"⚡ *Scraping Meta Ad Library* {label}\n"
@@ -193,9 +204,8 @@ async def run_viral_scraper(
         status_msg_id = status_msg.message_id
 
     try:
-        # Fetch top video ads
         ads = await scanner.scrape_viral_products(
-            keyword=keyword,
+            keyword=clean_keyword,
             country=country_code,
             min_days=3,
             limit=limit,
@@ -213,7 +223,6 @@ async def run_viral_scraper(
             await context.bot.send_message(chat_id=chat_id, text=no_ads_text, parse_mode=ParseMode.MARKDOWN, reply_markup=retry_markup)
             return
 
-        # Deliver playable video cards to Telegram
         delivered = 0
         for ad in ads:
             success = await dispatcher.send_viral_ad(ad, target_chat_id=str(chat_id))
@@ -221,7 +230,6 @@ async def run_viral_scraper(
                 delivered += 1
             await asyncio.sleep(1.0)
 
-        # Done summary message
         done_markup = InlineKeyboardMarkup([
             [
                 InlineKeyboardButton("🔥 More Viral Winners", callback_data=f"feed:{country_code}"),
@@ -238,9 +246,10 @@ async def run_viral_scraper(
     except Exception as exc:
         logger.error(f"Scraper error for chat {chat_id}: {exc}", exc_info=True)
         err_markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔄 Try Again", callback_data="action:start")]])
+        safe_exc = escape_md(str(exc)[:160])
         await context.bot.send_message(
             chat_id=chat_id,
-            text=f"⚠️ *An error occurred during scraping:*\n`{str(exc)[:160]}`",
+            text=f"⚠️ *An error occurred during scraping:*\n`{safe_exc}`",
             parse_mode=ParseMode.MARKDOWN,
             reply_markup=err_markup,
         )
@@ -259,8 +268,10 @@ async def run_tiktok_scraper(
     Falls back gracefully to TikTok-style viral reels if TikTok is regionally blocked.
     """
     country_code = country.upper()
-    is_kw = bool(keyword and keyword.strip())
-    label = f'for *"{keyword}"*' if is_kw else "*top converting e-com ads*"
+    clean_keyword = keyword.strip() if keyword else None
+    is_kw = bool(clean_keyword)
+    escaped_kw = escape_md(clean_keyword) if clean_keyword else ""
+    label = f'for *"{escaped_kw}"*' if is_kw else "*top converting e-com ads*"
 
     status_text = (
         f"🎵 *Scraping TikTok Top Ads* {label}\n"
@@ -288,18 +299,16 @@ async def run_tiktok_scraper(
         status_msg_id = status_msg.message_id
 
     try:
-        # First attempt: Direct TikTok Creative Center
         ads = await tiktok_scraper.scrape_tiktok_ads(
-            keyword=keyword,
+            keyword=clean_keyword,
             country=country_code,
             limit=limit,
         )
 
-        # Fallback: If TikTok returned 0 (e.g. regional ISP block before cloud deployment)
         if not ads:
             logger.info("[TikTok Fallback] Pulling TikTok-style viral vertical reels via Meta...")
             ads = await scanner.scrape_viral_reels(
-                keyword=keyword or "TikTok made me buy it",
+                keyword=clean_keyword or "TikTok made me buy it",
                 country=country_code,
                 limit=limit,
             )
@@ -337,9 +346,10 @@ async def run_tiktok_scraper(
     except Exception as exc:
         logger.error(f"TikTok scraper error: {exc}", exc_info=True)
         err_markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔄 Main Menu", callback_data="action:start")]])
+        safe_exc = escape_md(str(exc)[:160])
         await context.bot.send_message(
             chat_id=chat_id,
-            text=f"⚠️ *An error occurred:*\n`{str(exc)[:160]}`",
+            text=f"⚠️ *An error occurred:*\n`{safe_exc}`",
             parse_mode=ParseMode.MARKDOWN,
             reply_markup=err_markup,
         )
@@ -349,7 +359,7 @@ async def run_reels_scraper(
     chat_id: int,
     context: ContextTypes.DEFAULT_TYPE,
     keyword: Optional[str] = None,
-    country: str = "US",
+    country: str = "ALL",
     limit: int = 3,
     status_msg_id: Optional[int] = None,
 ) -> None:
@@ -357,8 +367,10 @@ async def run_reels_scraper(
     Scrapes 9:16 vertical video reels (Instagram Reels & FB Reels) with viral triggers.
     """
     country_code = country.upper()
-    is_kw = bool(keyword and keyword.strip())
-    label = f'for *"{keyword}"*' if is_kw else "*viral vertical reels*"
+    clean_keyword = keyword.strip() if keyword else None
+    is_kw = bool(clean_keyword)
+    escaped_kw = escape_md(clean_keyword) if clean_keyword else ""
+    label = f'for *"{escaped_kw}"*' if is_kw else "*viral vertical reels*"
 
     status_text = (
         f"📱 *Scraping Viral Reels (9:16)* {label}\n"
@@ -387,7 +399,7 @@ async def run_reels_scraper(
 
     try:
         ads = await scanner.scrape_viral_reels(
-            keyword=keyword,
+            keyword=clean_keyword,
             country=country_code,
             limit=limit,
         )
@@ -425,9 +437,10 @@ async def run_reels_scraper(
     except Exception as exc:
         logger.error(f"Reels scraper error: {exc}", exc_info=True)
         err_markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔄 Main Menu", callback_data="action:start")]])
+        safe_exc = escape_md(str(exc)[:160])
         await context.bot.send_message(
             chat_id=chat_id,
-            text=f"⚠️ *An error occurred:*\n`{str(exc)[:160]}`",
+            text=f"⚠️ *An error occurred:*\n`{safe_exc}`",
             parse_mode=ParseMode.MARKDOWN,
             reply_markup=err_markup,
         )
@@ -439,6 +452,8 @@ async def run_reels_scraper(
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Welcoming dashboard with 1-click viral feed buttons."""
+    if not update.effective_user or not update.effective_message:
+        return
     user_id = update.effective_user.id
     if not is_authorized(user_id):
         return
@@ -451,7 +466,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         f"🌍 *Active Country:* `{country}`\n\n"
         "👇 *Tap an option below or simply type any product keyword:*"
     )
-    await update.message.reply_text(
+    await update.effective_message.reply_text(
         text=text,
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=get_main_menu_markup(country),
@@ -460,6 +475,8 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Simple operational guide."""
+    if not update.effective_user or not update.effective_message:
+        return
     user_id = update.effective_user.id
     if not is_authorized(user_id):
         return
@@ -467,11 +484,12 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     text = (
         "📖 *How to Use the Viral Video Scraper*\n"
         "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        "• *Find Worldwide Winners:* Tap *[🌐 Global Viral Feed]* or type `/global`\n"
         "• *Find Meta Winners:* Tap *[🔥 Viral Feed]* or type `/viral`\n"
         "• *Find TikTok Top Ads:* Tap *[🎵 TikTok Top Ads]* or type `/tiktok`\n"
         "• *Find 9:16 Vertical Reels:* Tap *[📱 Viral Reels]* or type `/reels`\n"
         "• *Search Any Keyword:* Simply send the name into chat (e.g. `galaxy projector`, `sunset lamp`)\n"
-        "• *Target Country:* `/country US`, `/country IN`, `/country AE`, or `/country GB`\n\n"
+        "• *Target Country:* `/country ALL`, `/country US`, `/country IN`, `/country AE`, or `/country GB`\n\n"
         "📦 *Every Alert Delivers:*\n"
         "1. Full Playable MP4 Video (Watch directly in chat)\n"
         "2. Clean Product Title\n"
@@ -479,11 +497,13 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         "4. Live Storefront Link (Shopify/D2C landing page)\n"
         "5. 1-Click Factory Buttons (1688 / YiwuGo / AliExpress / Meesho)"
     )
-    await update.message.reply_text(text=text, parse_mode=ParseMode.MARKDOWN)
+    await update.effective_message.reply_text(text=text, parse_mode=ParseMode.MARKDOWN)
 
 
 async def tiktok_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Scrapes top TikTok e-commerce video ads: /tiktok or /tiktok <niche>."""
+    if not update.effective_user or not update.effective_chat:
+        return
     user_id = update.effective_user.id
     if not is_authorized(user_id):
         return
@@ -502,6 +522,8 @@ async def tiktok_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 async def reels_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Scrapes 9:16 vertical short-form reels: /reels or /reels <niche>."""
+    if not update.effective_user or not update.effective_chat:
+        return
     user_id = update.effective_user.id
     if not is_authorized(user_id):
         return
@@ -520,6 +542,8 @@ async def reels_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 async def global_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Scrapes worldwide viral video ads across all global markets: /global or /global <keyword>."""
+    if not update.effective_user or not update.effective_chat:
+        return
     user_id = update.effective_user.id
     if not is_authorized(user_id):
         return
@@ -537,6 +561,8 @@ async def global_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 async def viral_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Triggers instant viral discovery for a specified or default country."""
+    if not update.effective_user or not update.effective_chat:
+        return
     user_id = update.effective_user.id
     if not is_authorized(user_id):
         return
@@ -561,13 +587,15 @@ async def viral_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 async def scrape_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Direct keyword search command: /scrape <product>."""
+    if not update.effective_user or not update.effective_message or not update.effective_chat:
+        return
     user_id = update.effective_user.id
     if not is_authorized(user_id):
         return
 
     args = context.args
     if not args:
-        await update.message.reply_text("🔎 Please provide a product keyword. Example: `/scrape sunset lamp`", parse_mode=ParseMode.MARKDOWN)
+        await update.effective_message.reply_text("🔎 Please provide a product keyword. Example: `/scrape sunset lamp`", parse_mode=ParseMode.MARKDOWN)
         return
 
     query = " ".join(args).strip()
@@ -583,6 +611,8 @@ async def scrape_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 async def country_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Sets or views target country."""
+    if not update.effective_user or not update.effective_message:
+        return
     user_id = update.effective_user.id
     if not is_authorized(user_id):
         return
@@ -590,9 +620,9 @@ async def country_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     args = context.args
     session = user_sessions.setdefault(user_id, {})
     if not args:
-        current = session.get("country", "US")
-        await update.message.reply_text(
-            f"🌍 Current target country: *{current}*\n\nChange country with: `/country US` or `/country IN`",
+        current = session.get("country", "ALL")
+        await update.effective_message.reply_text(
+            f"🌍 Current target country: *{current}*\n\nChange country with: `/country ALL`, `/country US`, or `/country IN`",
             parse_mode=ParseMode.MARKDOWN,
             reply_markup=get_country_selection_markup(),
         )
@@ -602,18 +632,20 @@ async def country_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     if code in ["IN", "US", "AE", "GB", "ALL", "GLOBAL"]:
         normalized = "ALL" if code in ["ALL", "GLOBAL"] else code
         session["country"] = normalized
-        await update.message.reply_text(f"✅ Target country updated to: *{normalized}*", parse_mode=ParseMode.MARKDOWN, reply_markup=get_main_menu_markup(normalized))
+        await update.effective_message.reply_text(f"✅ Target country updated to: *{normalized}*", parse_mode=ParseMode.MARKDOWN, reply_markup=get_main_menu_markup(normalized))
     else:
-        await update.message.reply_text("⚠️ Supported countries: `ALL` (Global), `US`, `IN`, `AE`, `GB`", parse_mode=ParseMode.MARKDOWN)
+        await update.effective_message.reply_text("⚠️ Supported countries: `ALL` (Global), `US`, `IN`, `AE`, `GB`", parse_mode=ParseMode.MARKDOWN)
 
 
 async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Natural text handling: any sent text is treated as a product keyword search."""
+    if not update.effective_user or not update.effective_message or not update.effective_chat:
+        return
     user_id = update.effective_user.id
     if not is_authorized(user_id):
         return
 
-    text = update.message.text.strip()
+    text = update.effective_message.text.strip() if update.effective_message.text else ""
     if not text or text.startswith("/"):
         return
 
@@ -630,9 +662,12 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
 async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handles inline button clicks."""
     query = update.callback_query
+    if not query or not update.effective_user or not update.effective_chat:
+        return
+
     await query.answer()
 
-    data = query.data
+    data = query.data or ""
     chat_id = update.effective_chat.id
     user_id = update.effective_user.id
     session = user_sessions.setdefault(user_id, {})
@@ -646,7 +681,7 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
             keyword=None,
             country=country,
             limit=3,
-            status_msg_id=query.message.message_id,
+            status_msg_id=query.message.message_id if query.message else None,
         )
 
     elif data == "action:next_viral":
@@ -668,7 +703,7 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
             keyword=None,
             country=country,
             limit=3,
-            status_msg_id=query.message.message_id,
+            status_msg_id=query.message.message_id if query.message else None,
         )
 
     elif data.startswith("reels:"):
@@ -680,7 +715,7 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
             keyword=None,
             country=country,
             limit=3,
-            status_msg_id=query.message.message_id,
+            status_msg_id=query.message.message_id if query.message else None,
         )
 
     elif data == "action:country_menu":
@@ -738,65 +773,67 @@ def start_render_health_server():
                 self.end_headers()
                 self.wfile.write(b'{"status":"ok","service":"ViralVideoScraperBot","state":"running"}')
 
-            def log_message(self, *args):
-                pass  # suppress access logs from health pings
+            def log_message(self, format, *args):
+                # Suppress flood of GET / health logs
+                pass
 
         server = HTTPServer(("0.0.0.0", port), HealthHandler)
-        thread = threading.Thread(target=server.serve_forever, daemon=True)
-        thread.start()
-        logger.info(f"Render HTTP health check server started on 0.0.0.0:{port}")
+        server_thread = threading.Thread(target=server.serve_forever, daemon=True)
+        server_thread.start()
+        logger.info(f"Render HTTP health check server listening on 0.0.0.0:{port}")
     except Exception as exc:
-        logger.warning(f"Could not start Render health check server on port {port_str}: {exc}")
+        logger.warning(f"Could not bind Render health server on port {port_str}: {exc}")
 
 
 # ======================================================================================
-# APPLICATION ENTRYPOINT
+# APPLICATION BOOTSTRAP
 # ======================================================================================
 
-def main():
-    """Initializes and runs the simplified viral video scraper bot."""
+def main() -> None:
+    """Initializes and runs the Telegram Bot Daemon."""
     if not HAS_TELEGRAM:
-        logger.error("python-telegram-bot is not installed. Please run: pip install python-telegram-bot>=20.0")
-        print("[!] python-telegram-bot is required to run the bot daemon. Install with: pip install python-telegram-bot>=20.0")
-        return
-    token = settings.TELEGRAM_BOT_TOKEN
-    if not token or token == "YOUR_BOT_TOKEN":
-        logger.error("TELEGRAM_BOT_TOKEN is not configured in .env.")
-        return
+        logger.critical("python-telegram-bot is not installed. Run: pip install python-telegram-bot")
+        sys.exit(1)
 
-    # Start cloud health server if PORT is defined (Render requirement)
+    token = getattr(settings, "TELEGRAM_BOT_TOKEN", None)
+    if not token:
+        logger.critical("TELEGRAM_BOT_TOKEN is not configured in settings. Exiting.")
+        sys.exit(1)
+
+    # Launch Render HTTP health check server if $PORT is set
     start_render_health_server()
 
-    # If running on cloud (PORT is set) and RENDER_POLLING is not enabled,
-    # keep HTTP health server alive in standby so local laptop has exclusive polling access.
+    # Cloud vs Local Standby: On Render ($PORT is set), keep the HTTP health server alive
+    # but do not start Telegram polling unless RENDER_POLLING=true is explicitly set.
+    # This prevents '409 Conflict: terminated by other getUpdates request' when running locally.
     if os.environ.get("PORT") and os.environ.get("RENDER_POLLING", "").lower() not in ["true", "1", "yes"]:
-        logger.info(f"Render Standby: Health server active on port {os.environ.get('PORT')}. Telegram polling disabled so local laptop can run.")
+        logger.info(f"Render Standby: Health server active on port {os.environ.get('PORT')}. Telegram polling disabled so local machine can poll without 409 Conflict.")
         import time
         while True:
             time.sleep(3600)
 
-    logger.info(f"Initializing Viral Video Scraper Daemon for bot token prefix: {token[:10]}...")
-    app = Application.builder().token(token).build()
 
-    # Register handlers
-    app.add_handler(CommandHandler("start", start_command))
-    app.add_handler(CommandHandler("global", global_command))
-    app.add_handler(CommandHandler("viral", viral_command))
-    app.add_handler(CommandHandler("tiktok", tiktok_command))
-    app.add_handler(CommandHandler("reels", reels_command))
-    app.add_handler(CommandHandler("scrape", scrape_command))
-    app.add_handler(CommandHandler("search", scrape_command))
-    app.add_handler(CommandHandler("country", country_command))
-    app.add_handler(CommandHandler("help", help_command))
-    app.add_handler(CallbackQueryHandler(handle_callback_query))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_message))
+    # Build Telegram Bot Application
+    application = Application.builder().token(token).build()
 
-    logger.info("Viral Video Scraper Bot listening for interactive events...")
-    app.run_polling(drop_pending_updates=True)
+    # Register Command Handlers
+    application.add_handler(CommandHandler("start", start_command))
+    application.add_handler(CommandHandler("help", help_command))
+    application.add_handler(CommandHandler("global", global_command))
+    application.add_handler(CommandHandler("viral", viral_command))
+    application.add_handler(CommandHandler("tiktok", tiktok_command))
+    application.add_handler(CommandHandler("reels", reels_command))
+    application.add_handler(CommandHandler("scrape", scrape_command))
+    application.add_handler(CommandHandler("search", scrape_command))
+    application.add_handler(CommandHandler("country", country_command))
+
+    # Register Callback & Message Handlers
+    application.add_handler(CallbackQueryHandler(handle_callback_query))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_message))
+
+    logger.info("Bot daemon initialized successfully. Starting long polling...")
+    application.run_polling(drop_pending_updates=True)
 
 
 if __name__ == "__main__":
-    try:
-        main()
-    except (KeyboardInterrupt, SystemExit):
-        logger.info("Bot daemon stopped.")
+    main()
