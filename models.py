@@ -1,11 +1,19 @@
 """
-Data models and typed schemas for E-Commerce Trend Arbitrage Engine.
+========================================================================================
+Data models and typed schemas for E-Commerce Trend Arbitrage Engine (models.py)
+========================================================================================
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
+
+try:
+    from pydantic import ConfigDict
+    PYDANTIC_V2 = True
+except ImportError:
+    PYDANTIC_V2 = False
 
 
 class SaturationTier(str, Enum):
@@ -20,22 +28,53 @@ class RTORiskLevel(str, Enum):
     HIGH = "HIGH"
 
 
+class SupplierMatch(BaseModel):
+    """Factory and wholesale pricing data from B2B platforms."""
+    platform: str  # 1688, YiwuGo, AliExpress, Meesho, IndiaMART
+    supplier_title: str
+    product_url: str
+    price_original: float
+    currency_original: str
+    price_inr: float
+    moq: int = 1
+    shipping_estimate_inr: float = 0.0
+
+    if PYDANTIC_V2:
+        model_config = ConfigDict(extra="ignore")
+    else:
+        class Config:
+            extra = "ignore"
+
+
 class ScrapedAd(BaseModel):
-    """Represents a validated active ad extracted from Western Meta Ad Library."""
+    """Represents a validated active ad extracted from Meta Ad Library, TikTok, or Reels."""
     ad_id: str
-    source_country: str
+    source_country: str = "ALL"
     started_date: Optional[datetime] = None
-    days_active: int = Field(ge=0, description="Consecutive running days")
-    ad_title: str
+    days_active: int = Field(default=0, ge=0, description="Consecutive running days")
+    ad_title: str = "Viral Product"
     ad_body: str = ""
     landing_page_url: Optional[str] = None
     image_url: Optional[str] = None
     video_url: Optional[str] = None
-    ad_library_url: str
+    ad_library_url: str = ""
     clean_product_name: str
     core_keywords: List[str] = Field(default_factory=list)
     creative_variations_count: int = 1
     is_confirmed_scaling: bool = False
+
+    # Optional arbitrage & margin intelligence metrics
+    target_selling_price_inr: Optional[float] = None
+    best_supplier_match: Optional[SupplierMatch] = None
+    saturation_tier: SaturationTier = SaturationTier.EARLY
+    rto_risk: RTORiskLevel = RTORiskLevel.LOW
+
+    if PYDANTIC_V2:
+        model_config = ConfigDict(extra="ignore", populate_by_name=True)
+    else:
+        class Config:
+            extra = "ignore"
+            allow_population_by_field_name = True
 
 
 class PlatformCompetition(BaseModel):
@@ -49,6 +88,12 @@ class PlatformCompetition(BaseModel):
     visually_matched_count: int = 0
     sample_listing_urls: List[str] = Field(default_factory=list)
 
+    if PYDANTIC_V2:
+        model_config = ConfigDict(extra="ignore")
+    else:
+        class Config:
+            extra = "ignore"
+
 
 class SaturationReport(BaseModel):
     """Consolidated market competition and saturation status across India channels."""
@@ -58,6 +103,12 @@ class SaturationReport(BaseModel):
     india_meta_ad_urls: List[str] = Field(default_factory=list)
     tier: SaturationTier
     summary: str
+
+    if PYDANTIC_V2:
+        model_config = ConfigDict(extra="ignore")
+    else:
+        class Config:
+            extra = "ignore"
 
 
 class UnitEconomics(BaseModel):
@@ -71,6 +122,12 @@ class UnitEconomics(BaseModel):
     rto_risk: RTORiskLevel
     rto_reasons: List[str] = Field(default_factory=list)
     in_sweet_spot: bool = True
+
+    if PYDANTIC_V2:
+        model_config = ConfigDict(extra="ignore")
+    else:
+        class Config:
+            extra = "ignore"
 
 
 class SourcingBenchmark(BaseModel):
@@ -87,10 +144,16 @@ class SourcingBenchmark(BaseModel):
     target_selling_price_inr: float
     gross_margin_pct: float
     is_viable_margin: bool = True  # True if gross margin >= 60%
-    max_wholesale_inr: Optional[float] = None  # User requested wholesale ceiling
+    max_wholesale_inr: Optional[float] = None
     indiamart_available: bool = False
     indiamart_hub_cities: List[str] = Field(default_factory=list)
     sourcing_url: Optional[str] = None
+
+    if PYDANTIC_V2:
+        model_config = ConfigDict(extra="ignore")
+    else:
+        class Config:
+            extra = "ignore"
 
 
 class OpportunityEvaluation(BaseModel):
@@ -102,4 +165,25 @@ class OpportunityEvaluation(BaseModel):
     arbitrage_score: float = Field(ge=0.0, le=100.0)
     qualified: bool
     evaluation_notes: List[str] = Field(default_factory=list)
-    evaluated_at: datetime = Field(default_factory=datetime.utcnow)
+    evaluated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+    if PYDANTIC_V2:
+        model_config = ConfigDict(extra="ignore")
+    else:
+        class Config:
+            extra = "ignore"
+
+
+class ArbitrageAlert(BaseModel):
+    """Full arbitrage report delivered to Telegram Dispatcher."""
+    ad: ScrapedAd
+    estimated_profit_margin_percent: float = 0.0
+    gross_margin_inr: float = 0.0
+    recommended_action: str = "TEST"
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+    if PYDANTIC_V2:
+        model_config = ConfigDict(extra="ignore")
+    else:
+        class Config:
+            extra = "ignore"
