@@ -599,6 +599,13 @@ class ReverseNetworkScanner:
 
         extracted_ads: List[ScrapedAd] = []
         for raw in raw_ads:
+            # Get title, body, and check exclusion list
+            title = raw.get("title") or raw.get("raw_title") or raw.get("ad_title") or ""
+            body = raw.get("body") or raw.get("body_text") or raw.get("ad_body") or ""
+
+            if not is_valid_dropship_product(title, body):
+                continue  # skip clinical / inappropriate ads
+
             clean_title = sanitize_text(raw.get("raw_title", ""))
             page_name = raw.get("page_name", "")
             if not clean_title or ("." in clean_title and len(clean_title.split()) <= 2):
