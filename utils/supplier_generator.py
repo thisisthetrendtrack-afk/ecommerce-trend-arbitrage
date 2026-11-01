@@ -114,6 +114,33 @@ def is_valid_dropship_product(ad_title: str, ad_body: str = "") -> bool:
     return True
 
 
+ECOMM_INDICATORS = [
+    r"myshopify\.com",
+    r"/products/",
+    r"/collections/",
+    r"free shipping",
+    r"off today",
+    r"order now",
+    r"cash on delivery",
+    r"get yours",
+    r"discount code",
+    r"shop now",
+    r"add to cart",
+    r"buy \d+ get \d+",
+    r"limited stock",
+]
+
+COMPILED_ECOMM_INDICATORS = [re.compile(p, re.IGNORECASE) for p in ECOMM_INDICATORS]
+
+
+def has_ecommerce_intent(ad_text: str, landing_url: str = "") -> bool:
+    """
+    Enforces that the landing page or ad text contains recognizable e-commerce signals.
+    """
+    combined = f"{ad_text} {landing_url}".lower()
+    return any(pat.search(combined) for pat in COMPILED_ECOMM_INDICATORS)
+
+
 JUNK_CATEGORY_KEYWORDS = [
     # 1. Nutra, Dietary Supplements, Pills, Gummies & Powders
     r"\bcapsule[s]?\b", r"\bsupplement[s]?\b", r"\bpill[s]?\b", r"\bgumm(?:y|ies)\b",

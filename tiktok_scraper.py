@@ -22,7 +22,11 @@ from config import settings
 from models import ScrapedAd
 from utils.browser import browser_manager
 from utils.keyword_extractor import extract_core_keywords, sanitize_text
-from utils.supplier_generator import is_blacklisted_or_junk_ad, is_valid_dropship_product
+from utils.supplier_generator import (
+    has_ecommerce_intent,
+    is_blacklisted_or_junk_ad,
+    is_valid_dropship_product,
+)
 
 logger = logging.getLogger("TrendArbitrage.TikTok")
 
@@ -168,9 +172,14 @@ class TikTokTopAdsScraper:
             # Get title, body, and check exclusion list
             title_cand = item.get("title") or item.get("ad_title") or item.get("brand_name") or item.get("item_name") or ""
             body_cand = item.get("body") or item.get("ad_body") or item.get("desc") or ""
+            landing_page = item.get("landing_page_url") or item.get("target_url") or ""
 
             if not is_valid_dropship_product(title_cand, body_cand):
                 continue  # skip clinical / inappropriate ads
+
+            # E-Commerce Whitelist: Ensure recognizable e-commerce signals
+            if not has_ecommerce_intent(f"{title_cand} {body_cand}", landing_page):
+                continue
 
             # Extract video URL with fallback resolution
             video_info = item.get("video_info") or {}

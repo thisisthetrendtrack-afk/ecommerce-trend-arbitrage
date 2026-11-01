@@ -216,6 +216,36 @@ def is_valid_dropship_product(ad_title: str, ad_body: str) -> bool:
     return True
 
 
+# ======================================================================================
+# E-Commerce Whitelist Regex Indicators
+# ======================================================================================
+
+ECOMM_INDICATORS = [
+    r"myshopify\.com",
+    r"/products/",
+    r"/collections/",
+    r"free shipping",
+    r"off today",
+    r"order now",
+    r"cash on delivery",
+    r"get yours",
+    r"discount code",
+    r"shop now",
+    r"add to cart",
+    r"limited stock",
+]
+
+COMPILED_ECOMM_INDICATORS = [re.compile(p, re.IGNORECASE) for p in ECOMM_INDICATORS]
+
+
+def has_ecommerce_intent(ad_text: str, landing_url: str = "") -> bool:
+    """
+    Enforces that the landing page or ad text contains recognizable e-commerce signals.
+    """
+    combined = f"{ad_text} {landing_url}".lower()
+    return any(pat.search(combined) for pat in COMPILED_ECOMM_INDICATORS)
+
+
 JUNK_CATEGORY_KEYWORDS = [
     # 1. Nutra, Dietary Supplements, Pills, Gummies & Powders
     r"\bcapsule[s]?\b", r"\bsupplement[s]?\b", r"\bpill[s]?\b", r"\bgumm(?:y|ies)\b",
@@ -448,6 +478,11 @@ class MetaAdInterceptor:
                             logger.info(f"[Quality Gate] Discarded non-dropship junk ad ({reason}): '{raw_title or page_name}'")
                             continue
 
+                        # E-Commerce Whitelist: Enforce recognizable e-commerce signals
+                        if not has_ecommerce_intent(f"{raw_title} {body_text}", cta_link or ""):
+                            logger.debug(f"[Quality Gate] Dropped ad lacking clear e-commerce intent: '{raw_title or page_name}'")
+                            continue
+
                         ad_entry = {
                             "ad_id": str(ad_archive_id),
                             "page_name": str(page_name),
@@ -644,9 +679,14 @@ class ReverseNetworkScanner:
             # Get title, body, and check exclusion list
             title = raw.get("title") or raw.get("raw_title") or raw.get("ad_title") or ""
             body = raw.get("body") or raw.get("body_text") or raw.get("ad_body") or ""
+            cta_url = raw.get("cta_destination_url") or ""
 
             if not is_valid_dropship_product(title, body):
                 continue  # skip clinical / inappropriate ads
+
+            # E-Commerce Whitelist: Require recognizable dropship/storefront signals
+            if not has_ecommerce_intent(f"{title} {body}", cta_url):
+                continue
 
             clean_title = sanitize_text(raw.get("raw_title", ""))
             page_name = raw.get("page_name", "")
@@ -729,10 +769,12 @@ class ReverseNetworkScanner:
         if not raw_ads:
             return []
 
-        # Secondary Quality Gate: Discard any nutra/medical/scam ads
+        # Secondary Quality Gate: Discard any nutra/medical/scam ads or ads lacking e-commerce signals
         clean_ads = [
             a for a in raw_ads
-            if not is_blacklisted_or_junk_ad(a.ad_title, a.ad_body, a.clean_product_name, a.landing_page_url or "")[0]
+            if is_valid_dropship_product(a.ad_title, a.ad_body)
+            and has_ecommerce_intent(f"{a.ad_title} {a.ad_body}", a.landing_page_url or "")
+            and not is_blacklisted_or_junk_ad(a.ad_title, a.ad_body, a.clean_product_name, a.landing_page_url or "")[0]
         ]
 
         if not clean_ads:
