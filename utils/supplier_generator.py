@@ -75,6 +75,36 @@ NON_ALPHANUM_REGEX = re.compile(r"[#@&*^%$!~`+=_<>|/\\{}\[\]\"\'\(\)\:\;\-\–\�
 # Dropshipping Quality Guard: Blacklist Filters for Nutra, Medical, Adult & Scams
 # ======================================================================================
 
+# 🚫 List of medical, supplement, borderline inappropriate, or digital spam exclusions
+EXCLUDED_KEYWORDS = [
+    # Medical & Body Issues
+    "cinnamon", "oil", "supplement", "capsules", "weight loss", "fat", "veins", "stretch marks",
+    "pain", "belly", "serum", "pill", "diet", "doctor", "skin", "medical", "treatment", "cure",
+    "infections", "swelling", "detox", "liver", "bloating", "digestion", "diabetic", "blood pressure",
+    "hair loss", "fungus", "scars", "acne", "pregnancy", "cream", "gels", "relief", "orthopedic",
+    
+    # Ingestibles / Health
+    "mg", "7200mg", "nutrition", "dietary", "vitamins", "capsule", "powder", "organic", "extract",
+    
+    # Non-Dropshippable / Scams
+    "casino", "gambling", "crypto", "free money", "earning app", "courses", "adult", "dating"
+]
+
+
+def is_valid_dropship_product(ad_title: str, ad_body: str = "") -> bool:
+    """
+    Validates that parsed ad text doesn't contain forbidden niches, medical, 
+    or adult content, avoiding bad image clickbait.
+    """
+    text_to_check = f"{ad_title} {ad_body}".lower()
+    
+    for kw in EXCLUDED_KEYWORDS:
+        if kw in text_to_check:
+            return False
+            
+    return True
+
+
 JUNK_CATEGORY_KEYWORDS = [
     # 1. Nutra, Dietary Supplements, Pills, Gummies & Powders
     r"\bcapsule[s]?\b", r"\bsupplement[s]?\b", r"\bpill[s]?\b", r"\bgumm(?:y|ies)\b",
@@ -122,6 +152,9 @@ def is_blacklisted_or_junk_ad(
     adult offer, casino/crypto scam, or non-physical service.
     Returns: (is_blacklisted, matched_reason)
     """
+    if not is_valid_dropship_product(title, f"{body} {page_name} {landing_url}"):
+        return True, "Excluded by dropship product safety gate"
+
     corpus = f"{title} {body} {page_name} {landing_url}".lower()
     for pat in COMPILED_JUNK_PATTERNS:
         match = pat.search(corpus)
