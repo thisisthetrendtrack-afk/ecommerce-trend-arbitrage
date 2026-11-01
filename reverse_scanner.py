@@ -93,27 +93,31 @@ def find_nodes_by_key(root: Any, target_key: str) -> List[Any]:
 
 COUNTRY_VIRAL_FOOTPRINTS: Dict[str, List[str]] = {
     "ALL": [
-        '"50% OFF" "Free Worldwide Shipping" "Shop Now"',
-        '"TikTok made me buy it" "Order Now"',
-        '"Limited stock available" "Shop Now"',
-        '"Get yours now" "Free Shipping"',
+        '"TikTok made me buy it" "Shop Now"',
+        '"Amazon finds you need" "Shop Now"',
+        '"Viral gadget" "Free shipping"',
+        '"Trending product" "Order Now"',
+        '"Link in bio" "Free shipping" "gadget"',
+        '"50% off" "Free shipping" "gadget"',
     ],
     "IN": [
-        '"Cash on delivery" "Shop Now"',
-        '"Free shipping all over India" "Order Now"',
-        '"Pay on delivery" "Buy 1 Get 1"',
+        '"TikTok made me buy it" "Cash on delivery"',
+        '"Free shipping all over India" "Order Now" "gadget"',
+        '"Pay on delivery" "Viral gadget"',
     ],
     "US": [
-        '"50% OFF" "Free Worldwide Shipping" "Shop Now"',
-        '"Limited quantity available" "Shop Now"',
+        '"TikTok made me buy it" "Shop Now"',
+        '"Amazon finds you need" "Link in bio"',
+        '"Viral gadget" "Free shipping"',
+        '"Viral product" "Shop Now"',
     ],
     "AE": [
-        '"Cash on delivery" "Free delivery" "Shop Now"',
-        '"COD available" "Order Now UAE"',
+        '"TikTok made me buy it" "Cash on delivery"',
+        '"Free delivery UAE" "Order Now" "gadget"',
     ],
     "GB": [
-        '"Free UK delivery" "Order Now"',
-        '"50% off sale ends today"',
+        '"TikTok made me buy it" "Free UK delivery"',
+        '"Amazon finds UK" "Shop Now"',
     ],
 }
 
@@ -122,7 +126,7 @@ COUNTRY_REELS_FOOTPRINTS: Dict[str, List[str]] = {
         '"TikTok made me buy it" "Shop Now"',
         '"Amazon finds you need" "Link in bio"',
         '"Viral gadget" "Free shipping"',
-        '"50% off" "Link in bio"',
+        '"50% off" "Link in bio" "gadget"',
     ],
     "IN": [
         '"TikTok made me buy it"',
@@ -143,6 +147,65 @@ COUNTRY_REELS_FOOTPRINTS: Dict[str, List[str]] = {
         '"Amazon finds" "Shop Now"',
     ],
 }
+
+
+# ======================================================================================
+# Dropshipping Quality Guard: Blacklist Filters for Nutra, Medical, Adult & Scams
+# ======================================================================================
+
+JUNK_CATEGORY_KEYWORDS = [
+    # 1. Nutra, Dietary Supplements, Pills, Gummies & Powders
+    r"\bcapsule[s]?\b", r"\bsupplement[s]?\b", r"\bpill[s]?\b", r"\bgumm(?:y|ies)\b",
+    r"\b\d+\s*mg\b", r"\bmct\s*oil\b", r"\bcinnamon\b", r"\bextract\b", r"\bformula\b",
+    r"\bdetox\b", r"\bweight\s*loss\b", r"\bfat\s*burner\b", r"\bbelly\s*fat\b",
+    r"\bketo\b", r"\bdiet\b", r"\bcleanse\b", r"\bcolon\b", r"\bprobiotic[s]?\b",
+    r"\bcollagen\b", r"\bserum\b", r"\bcreme?\b", r"\banti-aging\b", r"\bwrinkle[s]?\b",
+    r"\btestosterone\b", r"\bpotency\b", r"\bvitality\b", r"\bdrops\b",
+    
+    # 2. Medical Ailments, Disease, Gross Shock-Value Keywords
+    r"\bvaricose\b", r"\bvein[s]?\b", r"\bfungus\b", r"\bparasite[s]?\b", r"\bparasitic\b",
+    r"\bdiabetes\b", r"\bblood\s*sugar\b", r"\bprostate\b", r"\berectile\b", r"\bed\b",
+    r"\bhair\s*loss\b", r"\bhair\s*growth\b", r"\btinnitus\b", r"\bhearing\s*loss\b",
+    r"\bneuropathy\b", r"\bliver\b", r"\bgut\s*health\b", r"\bskin\s*tag[s]?\b",
+    r"\bmole[s]?\b", r"\bwart[s]?\b", r"\btoenail[s]?\b", r"\bcholesterol\b",
+    r"\bblood\s*pressure\b", r"\bthyroid\b", r"\barthritis\b", r"\bjoint\s*pain\b",
+    r"\bpain\s*relief\b", r"\bcbd\b", r"\bhemp\b", r"\binfection\b", r"\bcure\b",
+    r"\bsymptom[s]?\b", r"\bdisease\b", r"\bremedy\b", r"\bdoctor[s]?\b", r"\bclinic\b",
+    
+    # 3. Adult, Dating & NSFW
+    r"\bsex\b", r"\berotic\b", r"\bdating\b", r"\badult\b", r"\bescort\b", r"\bporn\b",
+    
+    # 4. Financial Scams, Crypto, Gambling & Lead Gen
+    r"\bcrypto\b", r"\bbitcoin\b", r"\bforex\b", r"\bloan[s]?\b", r"\bmortgage\b",
+    r"\binsurance\b", r"\bcasino\b", r"\bgambling\b", r"\bbetting\b", r"\bslot[s]?\b",
+    r"\blottery\b", r"\bastrology\b", r"\bhoroscope\b", r"\btarot\b", r"\bfortune\b",
+    r"\bwebinar\b", r"\bcourse\b", r"\bmake\s*money\b", r"\bincome\b", r"\bpassive\s*income\b",
+    
+    # 5. Services & Real Estate
+    r"\bagency\b", r"\bconsulting\b", r"\bcleaning\s*service\b", r"\broofing\b",
+    r"\bplumbing\b", r"\bdentist\b", r"\breal\s*estate\b", r"\brealtor\b"
+]
+
+COMPILED_JUNK_PATTERNS = [re.compile(p, re.IGNORECASE) for p in JUNK_CATEGORY_KEYWORDS]
+
+
+def is_blacklisted_or_junk_ad(
+    title: str = "",
+    body: str = "",
+    page_name: str = "",
+    landing_url: str = "",
+) -> Tuple[bool, str]:
+    """
+    Quality gate: Checks if an ad is a dietary supplement, gross medical clickbait,
+    adult offer, casino/crypto scam, or non-physical service.
+    Returns: (is_blacklisted, matched_reason)
+    """
+    corpus = f"{title} {body} {page_name} {landing_url}".lower()
+    for pat in COMPILED_JUNK_PATTERNS:
+        match = pat.search(corpus)
+        if match:
+            return True, f"Matched blacklisted keyword '{match.group(0)}'"
+    return False, ""
 
 
 def is_valid_ecommerce_landing_page(url: Optional[str]) -> bool:
@@ -294,6 +357,17 @@ class MetaAdInterceptor:
                         body_obj = snapshot.get("body", {}) or {}
                         body_text = body_obj.get("text", "") if isinstance(body_obj, dict) else str(body_obj)
                         raw_title = snapshot.get("title") or ""
+
+                        # Dropshipping Quality Gate: Discard Nutra, Medical, Supplements, Adult & Scam Ads
+                        is_junk, reason = is_blacklisted_or_junk_ad(
+                            title=raw_title,
+                            body=body_text,
+                            page_name=str(page_name),
+                            landing_url=cta_link or "",
+                        )
+                        if is_junk:
+                            logger.info(f"[Quality Gate] Discarded non-dropship junk ad ({reason}): '{raw_title or page_name}'")
+                            continue
 
                         ad_entry = {
                             "ad_id": str(ad_archive_id),
@@ -569,12 +643,29 @@ class ReverseNetworkScanner:
         if not raw_ads:
             return []
 
-        # Sort ads: prioritize video creatives, then longevity (days active)
-        raw_ads.sort(key=lambda a: (bool(a.video_url), a.days_active), reverse=True)
+        # Secondary Quality Gate: Discard any nutra/medical/scam ads
+        clean_ads = [
+            a for a in raw_ads
+            if not is_blacklisted_or_junk_ad(a.ad_title, a.ad_body, a.clean_product_name, a.landing_page_url or "")[0]
+        ]
 
-        # Prefer ads that have video or image
-        media_ads = [a for a in raw_ads if a.video_url or a.image_url]
-        return media_ads[:limit] if media_ads else raw_ads[:limit]
+        if not clean_ads:
+            clean_ads = raw_ads
+
+        # Video-First Priority: Dropshippers need playable video creatives
+        video_ads = [a for a in clean_ads if a.video_url]
+        if video_ads:
+            video_ads.sort(key=lambda a: a.days_active, reverse=True)
+            return video_ads[:limit]
+
+        # Clean physical product media fallback
+        media_ads = [a for a in clean_ads if a.image_url]
+        if media_ads:
+            media_ads.sort(key=lambda a: a.days_active, reverse=True)
+            return media_ads[:limit]
+
+        clean_ads.sort(key=lambda a: a.days_active, reverse=True)
+        return clean_ads[:limit]
 
     async def scrape_viral_reels(
         self,

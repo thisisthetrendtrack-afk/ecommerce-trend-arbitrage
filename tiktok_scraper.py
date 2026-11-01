@@ -22,6 +22,7 @@ from config import settings
 from models import ScrapedAd
 from utils.browser import browser_manager
 from utils.keyword_extractor import extract_core_keywords, sanitize_text
+from utils.supplier_generator import is_blacklisted_or_junk_ad
 
 logger = logging.getLogger("TrendArbitrage.TikTok")
 
@@ -193,6 +194,11 @@ class TikTokTopAdsScraper:
 
             cover_url = item.get("cover_url") or video_info.get("cover_url")
             landing_page = item.get("landing_page_url") or item.get("target_url")
+
+            # Dropshipping Quality Gate: Discard Nutra, Medical, Supplements, Adult & Scam Ads
+            if is_blacklisted_or_junk_ad(title, item.get("desc", ""), item.get("brand_name", ""), landing_page or "")[0]:
+                logger.info(f"[TikTok Quality Gate] Dropping non-dropship junk: '{title}'")
+                continue
             
             # Parse likes count safely
             raw_likes = item.get("like_cnt") or item.get("like_count") or 1200

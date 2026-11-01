@@ -71,6 +71,65 @@ EMOJI_REGEX = re.compile(
 NON_ALPHANUM_REGEX = re.compile(r"[#@&*^%$!~`+=_<>|/\\{}\[\]\"\'\(\)\:\;\-\–\—]+", re.UNICODE)
 
 
+# ======================================================================================
+# Dropshipping Quality Guard: Blacklist Filters for Nutra, Medical, Adult & Scams
+# ======================================================================================
+
+JUNK_CATEGORY_KEYWORDS = [
+    # 1. Nutra, Dietary Supplements, Pills, Gummies & Powders
+    r"\bcapsule[s]?\b", r"\bsupplement[s]?\b", r"\bpill[s]?\b", r"\bgumm(?:y|ies)\b",
+    r"\b\d+\s*mg\b", r"\bmct\s*oil\b", r"\bcinnamon\b", r"\bextract\b", r"\bformula\b",
+    r"\bdetox\b", r"\bweight\s*loss\b", r"\bfat\s*burner\b", r"\bbelly\s*fat\b",
+    r"\bketo\b", r"\bdiet\b", r"\bcleanse\b", r"\bcolon\b", r"\bprobiotic[s]?\b",
+    r"\bcollagen\b", r"\bserum\b", r"\bcreme?\b", r"\banti-aging\b", r"\bwrinkle[s]?\b",
+    r"\btestosterone\b", r"\bpotency\b", r"\bvitality\b", r"\bdrops\b",
+    
+    # 2. Medical Ailments, Disease, Gross Shock-Value Keywords
+    r"\bvaricose\b", r"\bvein[s]?\b", r"\bfungus\b", r"\bparasite[s]?\b", r"\bparasitic\b",
+    r"\bdiabetes\b", r"\bblood\s*sugar\b", r"\bprostate\b", r"\berectile\b", r"\bed\b",
+    r"\bhair\s*loss\b", r"\bhair\s*growth\b", r"\btinnitus\b", r"\bhearing\s*loss\b",
+    r"\bneuropathy\b", r"\bliver\b", r"\bgut\s*health\b", r"\bskin\s*tag[s]?\b",
+    r"\bmole[s]?\b", r"\bwart[s]?\b", r"\btoenail[s]?\b", r"\bcholesterol\b",
+    r"\bblood\s*pressure\b", r"\bthyroid\b", r"\barthritis\b", r"\bjoint\s*pain\b",
+    r"\bpain\s*relief\b", r"\bcbd\b", r"\bhemp\b", r"\binfection\b", r"\bcure\b",
+    r"\bsymptom[s]?\b", r"\bdisease\b", r"\bremedy\b", r"\bdoctor[s]?\b", r"\bclinic\b",
+    
+    # 3. Adult, Dating & NSFW
+    r"\bsex\b", r"\berotic\b", r"\bdating\b", r"\badult\b", r"\bescort\b", r"\bporn\b",
+    
+    # 4. Financial Scams, Crypto, Gambling & Lead Gen
+    r"\bcrypto\b", r"\bbitcoin\b", r"\bforex\b", r"\bloan[s]?\b", r"\bmortgage\b",
+    r"\binsurance\b", r"\bcasino\b", r"\bgambling\b", r"\bbetting\b", r"\bslot[s]?\b",
+    r"\blottery\b", r"\bastrology\b", r"\bhoroscope\b", r"\btarot\b", r"\bfortune\b",
+    r"\bwebinar\b", r"\bcourse\b", r"\bmake\s*money\b", r"\bincome\b", r"\bpassive\s*income\b",
+    
+    # 5. Services & Real Estate
+    r"\bagency\b", r"\bconsulting\b", r"\bcleaning\s*service\b", r"\broofing\b",
+    r"\bplumbing\b", r"\bdentist\b", r"\breal\s*estate\b", r"\brealtor\b"
+]
+
+COMPILED_JUNK_PATTERNS = [re.compile(p, re.IGNORECASE) for p in JUNK_CATEGORY_KEYWORDS]
+
+
+def is_blacklisted_or_junk_ad(
+    title: str = "",
+    body: str = "",
+    page_name: str = "",
+    landing_url: str = "",
+) -> Tuple[bool, str]:
+    """
+    Quality gate: Checks if an ad is a dietary supplement, gross medical clickbait,
+    adult offer, casino/crypto scam, or non-physical service.
+    Returns: (is_blacklisted, matched_reason)
+    """
+    corpus = f"{title} {body} {page_name} {landing_url}".lower()
+    for pat in COMPILED_JUNK_PATTERNS:
+        match = pat.search(corpus)
+        if match:
+            return True, f"Matched blacklisted keyword '{match.group(0)}'"
+    return False, ""
+
+
 def extract_clean_product_title(raw_text: str, fallback: str = "Viral Product") -> str:
     """
     Strips noise, marketing buzzwords, emojis, and URLs to extract a clean product title.
