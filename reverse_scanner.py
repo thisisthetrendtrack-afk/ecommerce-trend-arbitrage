@@ -92,6 +92,12 @@ def find_nodes_by_key(root: Any, target_key: str) -> List[Any]:
 # ======================================================================================
 
 COUNTRY_VIRAL_FOOTPRINTS: Dict[str, List[str]] = {
+    "ALL": [
+        '"50% OFF" "Free Worldwide Shipping" "Shop Now"',
+        '"TikTok made me buy it" "Order Now"',
+        '"Limited stock available" "Shop Now"',
+        '"Get yours now" "Free Shipping"',
+    ],
     "IN": [
         '"Cash on delivery" "Shop Now"',
         '"Free shipping all over India" "Order Now"',
@@ -112,6 +118,12 @@ COUNTRY_VIRAL_FOOTPRINTS: Dict[str, List[str]] = {
 }
 
 COUNTRY_REELS_FOOTPRINTS: Dict[str, List[str]] = {
+    "ALL": [
+        '"TikTok made me buy it" "Shop Now"',
+        '"Amazon finds you need" "Link in bio"',
+        '"Viral gadget" "Free shipping"',
+        '"50% off" "Link in bio"',
+    ],
     "IN": [
         '"TikTok made me buy it"',
         '"Link in bio" "Cash on delivery"',
@@ -438,7 +450,7 @@ class ReverseNetworkScanner:
         Intercepts Meta Ad Library unauthenticated internal GraphQL and Relay preloader
         JSON payloads. If keyword is None or 'viral', triggers automated viral discovery footprints.
         """
-        country_code = country.upper()
+        country_code = "ALL" if country.upper() in ["ALL", "GLOBAL", "WORLDWIDE", "WW"] else country.upper()
         is_viral_mode = not keyword or keyword.strip().lower() in ["viral", "current viral", "scrape viral", "all"]
         log_term = f"Viral Discovery ({country_code})" if is_viral_mode else f"'{keyword}' ({country_code})"
         logger.info(f"[Meta Reverse] Intercepting internal traffic for {log_term}...")

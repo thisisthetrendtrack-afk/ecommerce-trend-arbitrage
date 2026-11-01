@@ -43,7 +43,7 @@ class TikTokTopAdsScraper:
         Scrapes top winning e-commerce video ads on TikTok.
         Returns clean ScrapedAd objects with direct MP4 videos.
         """
-        country_code = country.upper()
+        country_code = "US" if country.upper() in ["ALL", "GLOBAL", "WORLDWIDE"] else country.upper()
         logger.info(f"[TikTok Scraper] Querying top video ads for region={country_code}, keyword='{keyword}'...")
 
         captured_ads: List[Dict[str, Any]] = []

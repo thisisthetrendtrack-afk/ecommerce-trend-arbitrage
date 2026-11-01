@@ -102,24 +102,26 @@ def get_user_country(user_id: int) -> str:
 # KEYBOARDS & MENUS
 # ======================================================================================
 
-def get_main_menu_markup(current_country: str = "US") -> InlineKeyboardMarkup:
+def get_main_menu_markup(current_country: str = "ALL") -> InlineKeyboardMarkup:
     """Generates the primary action dashboard."""
     keyboard = [
         [
-            InlineKeyboardButton("📱 Viral Reels (9:16)", callback_data=f"reels:{current_country}"),
-            InlineKeyboardButton("🎵 TikTok Top Ads", callback_data=f"tiktok:{current_country}"),
+            InlineKeyboardButton("🌐 Global Viral Feed (Worldwide)", callback_data="feed:ALL"),
         ],
         [
-            InlineKeyboardButton(f"🔥 Viral Feed ({current_country})", callback_data=f"feed:{current_country}"),
-            InlineKeyboardButton("🇮🇳 India Feed", callback_data="feed:IN"),
+            InlineKeyboardButton("📱 Global Reels (9:16)", callback_data="reels:ALL"),
+            InlineKeyboardButton("🎵 TikTok Top Ads", callback_data="tiktok:US"),
         ],
         [
             InlineKeyboardButton("🇺🇸 US Feed", callback_data="feed:US"),
+            InlineKeyboardButton("🇮🇳 India Feed", callback_data="feed:IN"),
+        ],
+        [
             InlineKeyboardButton("🇦🇪 UAE Feed", callback_data="feed:AE"),
             InlineKeyboardButton("🇬🇧 UK Feed", callback_data="feed:GB"),
         ],
         [
-            InlineKeyboardButton("🌍 Change Default Country", callback_data="action:country_menu"),
+            InlineKeyboardButton(f"🌍 Country: {current_country} (Change)", callback_data="action:country_menu"),
         ],
     ]
     return InlineKeyboardMarkup(keyboard)
@@ -128,6 +130,9 @@ def get_main_menu_markup(current_country: str = "US") -> InlineKeyboardMarkup:
 def get_country_selection_markup() -> InlineKeyboardMarkup:
     """Generates country selection keyboard."""
     keyboard = [
+        [
+            InlineKeyboardButton("🌐 Global / Worldwide (ALL)", callback_data="set_country:ALL"),
+        ],
         [
             InlineKeyboardButton("🇺🇸 United States", callback_data="set_country:US"),
             InlineKeyboardButton("🇮🇳 India", callback_data="set_country:IN"),
@@ -513,6 +518,23 @@ async def reels_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     )
 
 
+async def global_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Scrapes worldwide viral video ads across all global markets: /global or /global <keyword>."""
+    user_id = update.effective_user.id
+    if not is_authorized(user_id):
+        return
+
+    args = context.args
+    query = " ".join(args).strip() if args else None
+    await run_viral_scraper(
+        chat_id=update.effective_chat.id,
+        context=context,
+        keyword=query,
+        country="ALL",
+        limit=3,
+    )
+
+
 async def viral_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Triggers instant viral discovery for a specified or default country."""
     user_id = update.effective_user.id
@@ -523,8 +545,8 @@ async def viral_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     country = get_user_country(user_id)
     if args:
         c_arg = args[0].strip().upper()
-        if c_arg in ["IN", "US", "AE", "GB"]:
-            country = c_arg
+        if c_arg in ["IN", "US", "AE", "GB", "ALL", "GLOBAL"]:
+            country = "ALL" if c_arg in ["ALL", "GLOBAL"] else c_arg
             session = user_sessions.setdefault(user_id, {})
             session["country"] = country
 
@@ -577,11 +599,12 @@ async def country_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         return
 
     code = args[0].strip().upper()
-    if code in ["IN", "US", "AE", "GB"]:
-        session["country"] = code
-        await update.message.reply_text(f"✅ Target country updated to: *{code}*", parse_mode=ParseMode.MARKDOWN, reply_markup=get_main_menu_markup(code))
+    if code in ["IN", "US", "AE", "GB", "ALL", "GLOBAL"]:
+        normalized = "ALL" if code in ["ALL", "GLOBAL"] else code
+        session["country"] = normalized
+        await update.message.reply_text(f"✅ Target country updated to: *{normalized}*", parse_mode=ParseMode.MARKDOWN, reply_markup=get_main_menu_markup(normalized))
     else:
-        await update.message.reply_text("⚠️ Supported countries: `US`, `IN`, `AE`, `GB`", parse_mode=ParseMode.MARKDOWN)
+        await update.message.reply_text("⚠️ Supported countries: `ALL` (Global), `US`, `IN`, `AE`, `GB`", parse_mode=ParseMode.MARKDOWN)
 
 
 async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -749,6 +772,7 @@ def main():
 
     # Register handlers
     app.add_handler(CommandHandler("start", start_command))
+    app.add_handler(CommandHandler("global", global_command))
     app.add_handler(CommandHandler("viral", viral_command))
     app.add_handler(CommandHandler("tiktok", tiktok_command))
     app.add_handler(CommandHandler("reels", reels_command))
