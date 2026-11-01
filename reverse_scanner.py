@@ -116,8 +116,10 @@ COUNTRY_VIRAL_FOOTPRINTS: Dict[str, List[str]] = {
         '"Free delivery UAE" "Order Now" "gadget"',
     ],
     "GB": [
-        '"TikTok made me buy it" "Free UK delivery"',
-        '"Amazon finds UK" "Shop Now"',
+        '"TikTok made me buy it" "gadget"',
+        '"Viral gadget" "Free UK delivery"',
+        '"Trending product" "Order Now" "UK"',
+        '"Amazon finds" "gadget" "Shop Now"',
     ],
 }
 
@@ -164,6 +166,15 @@ EXCLUDED_KEYWORDS = [
     # Ingestibles / Health
     "mg", "7200mg", "nutrition", "dietary", "vitamins", "capsule", "powder", "organic", "extract",
     
+    # Digital Media, Books, Novels & Entertainment (Non-Physical)
+    "novel", "novels", "romance", "fiction", "book", "books", "ebook", "ebooks",
+    "kindle", "paperback", "hardcover", "audiobook", "audiobooks", "author", "authors",
+    "chapter", "chapters", "read now", "read free", "read more", "story", "stories",
+    "hymn", "wattpad", "webnovel", "goodnovel", "dreame", "manga", "comic", "comics",
+    "movie", "trailer", "gameplay", "mobile game", "rpg", "stream now", "episodes",
+    "charity", "donation", "donate", "church", "pastor", "prophecy", "prayer",
+    "t-shirt", "mug", "hoodie",
+
     # Non-Dropshippable / Scams
     "casino", "gambling", "crypto", "free money", "earning app", "courses", "adult", "dating"
 ]
@@ -215,7 +226,12 @@ JUNK_CATEGORY_KEYWORDS = [
     
     # 5. Services & Real Estate
     r"\bagency\b", r"\bconsulting\b", r"\bcleaning\s*service\b", r"\broofing\b",
-    r"\bplumbing\b", r"\bdentist\b", r"\breal\s*estate\b", r"\brealtor\b"
+    r"\bplumbing\b", r"\bdentist\b", r"\breal\s*estate\b", r"\brealtor\b",
+
+    # 6. Books, Fiction, eBooks, and Digital Stories
+    r"\bnovel[s]?\b", r"\bromance\b", r"\bfiction\b", r"\bbook[s]?\b", r"\bebook[s]?\b",
+    r"\bkindle\b", r"\baudiobook[s]?\b", r"\bauthor[s]?\b", r"\bchapter[s]?\b",
+    r"\bread\s+(?:now|free|online|more)\b", r"\bhymn\b", r"\bwebnovel\b", r"\bmanga\b"
 ]
 
 COMPILED_JUNK_PATTERNS = [re.compile(p, re.IGNORECASE) for p in JUNK_CATEGORY_KEYWORDS]
@@ -256,13 +272,19 @@ def is_valid_ecommerce_landing_page(url: Optional[str]) -> bool:
     domain = parsed.netloc.lower()
     path = parsed.path.lower()
 
-    # Disqualified domains (social networks, app stores, messaging)
+    # Disqualified domains (social networks, app stores, messaging, ebook platforms)
     disqualified = [
         "facebook.com", "instagram.com", "wa.me", "whatsapp.com",
         "play.google.com", "apps.apple.com", "youtube.com", "youtu.be",
-        "twitter.com", "x.com", "linkedin.com", "t.me"
+        "twitter.com", "x.com", "linkedin.com", "t.me",
+        "goodreads.com", "kobo.com", "audible.com", "wattpad.com",
+        "webnovel.com", "dreame.com", "mangadex.org", "royalroad.com"
     ]
     if any(d in domain for d in disqualified):
+        return False
+
+    # Disqualify digital Kindle book paths on Amazon
+    if "amazon." in domain and any(kp in path for kp in ["/kindle-dbs/", "/e-books/", "/digital-text/"]):
         return False
 
     # Reject non-product junk/lead paths

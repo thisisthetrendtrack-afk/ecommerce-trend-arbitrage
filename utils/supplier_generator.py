@@ -86,6 +86,15 @@ EXCLUDED_KEYWORDS = [
     # Ingestibles / Health
     "mg", "7200mg", "nutrition", "dietary", "vitamins", "capsule", "powder", "organic", "extract",
     
+    # Digital Media, Books, Novels & Entertainment (Non-Physical)
+    "novel", "novels", "romance", "fiction", "book", "books", "ebook", "ebooks",
+    "kindle", "paperback", "hardcover", "audiobook", "audiobooks", "author", "authors",
+    "chapter", "chapters", "read now", "read free", "read more", "story", "stories",
+    "hymn", "wattpad", "webnovel", "goodnovel", "dreame", "manga", "comic", "comics",
+    "movie", "trailer", "gameplay", "mobile game", "rpg", "stream now", "episodes",
+    "charity", "donation", "donate", "church", "pastor", "prophecy", "prayer",
+    "t-shirt", "mug", "hoodie",
+
     # Non-Dropshippable / Scams
     "casino", "gambling", "crypto", "free money", "earning app", "courses", "adult", "dating"
 ]
@@ -135,7 +144,12 @@ JUNK_CATEGORY_KEYWORDS = [
     
     # 5. Services & Real Estate
     r"\bagency\b", r"\bconsulting\b", r"\bcleaning\s*service\b", r"\broofing\b",
-    r"\bplumbing\b", r"\bdentist\b", r"\breal\s*estate\b", r"\brealtor\b"
+    r"\bplumbing\b", r"\bdentist\b", r"\breal\s*estate\b", r"\brealtor\b",
+
+    # 6. Books, Fiction, eBooks, and Digital Stories
+    r"\bnovel[s]?\b", r"\bromance\b", r"\bfiction\b", r"\bbook[s]?\b", r"\bebook[s]?\b",
+    r"\bkindle\b", r"\baudiobook[s]?\b", r"\bauthor[s]?\b", r"\bchapter[s]?\b",
+    r"\bread\s+(?:now|free|online|more)\b", r"\bhymn\b", r"\bwebnovel\b", r"\bmanga\b"
 ]
 
 COMPILED_JUNK_PATTERNS = [re.compile(p, re.IGNORECASE) for p in JUNK_CATEGORY_KEYWORDS]
